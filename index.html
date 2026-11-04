@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Trap Line Scorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+</head><body>
+<style>
+/* Layout: a field-side instrument. Camera on top, the call for the last shot right under it, the paper-style scoresheet below. Landscape puts camera and call side by side. */
+:root {
+  --bg: #eef1ec; --surface: #ffffff; --ink: #142019; --muted: #56655c; --line: #cfd8d0;
+  --clay: #d9531c; --clay-ink: #ffffff; --hit: #1d7f47; --miss: #bf3426; --unsure: #a86b0f;
+  --hit-bg: #e2f2e8; --miss-bg: #f8e3e0; --unsure-bg: #f7ecd7; --video-bg: #1b2520;
+  --f-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "Barlow", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1411; --surface: #172019; --ink: #e9efe9; --muted: #98a79d; --line: #2a362e;
+  --clay: #ee7339; --clay-ink: #1a0d06; --hit: #47c47b; --miss: #f0705f; --unsure: #e3a94b;
+  --hit-bg: #15301f; --miss-bg: #3a1a16; --unsure-bg: #352711; --video-bg: #050807; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1411; --surface: #172019; --ink: #e9efe9; --muted: #98a79d; --line: #2a362e;
+  --clay: #ee7339; --clay-ink: #1a0d06; --hit: #47c47b; --miss: #f0705f; --unsure: #e3a94b;
+  --hit-bg: #15301f; --miss-bg: #3a1a16; --unsure-bg: #352711; --video-bg: #050807; color-scheme: dark }
+
+html, body { background: var(--bg); color: var(--ink); }
+body { font: 16px/1.45 var(--f-body); }
+* { box-sizing: border-box; }
+button { font: 600 16px/1 var(--f-body); color: var(--ink); background: var(--surface); border: 1.5px solid var(--line);
+  border-radius: 10px; padding: 12px 14px; min-height: 46px; cursor: pointer; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--clay); outline-offset: 2px; }
+button:active { transform: translateY(1px); }
+button.primary { background: var(--clay); color: var(--clay-ink); border-color: var(--clay); }
+button:disabled { opacity: .45; cursor: default; }
+
+.app { max-width: 1100px; margin: 0 auto; display: grid; gap: 14px;
+  padding-block: 12px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mark { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 50% 42%, var(--clay) 0 46%, transparent 47%),
+  radial-gradient(circle, transparent 0 58%, var(--ink) 59% 66%, transparent 67%); flex: none; }
+h1 { font: 700 26px/1 var(--f-display); letter-spacing: .02em; margin: 0; text-transform: uppercase; }
+.progress { margin: 2px 0 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+
+.stage { display: grid; gap: 14px; }
+@media (min-width: 760px) { .stage { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; } }
+
+.videoWrap { position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: var(--video-bg); border-radius: 12px; overflow: hidden; }
+.videoWrap video, .videoWrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.skyline { position: absolute; left: 0; right: 0; border-top: 2px dashed #ffd23f; pointer-events: none; }
+.skyline span { position: absolute; right: 8px; top: -22px; font: 600 12px/1 var(--f-body); color: #ffd23f; text-shadow: 0 1px 2px #000; }
+.placeholder { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; text-align: center; padding: 16px; color: #dfe7e1; }
+.placeholder strong { font: 700 22px/1.1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; }
+.placeholder p { margin: 0; max-width: 34ch; font-size: 14px; color: #b9c6bd; }
+.hud { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.meter { position: relative; flex: 1 1 120px; height: 10px; background: rgba(0,0,0,.55); border-radius: 5px; overflow: hidden; }
+.meterFill { position: absolute; inset: 0 auto 0 0; width: 0; background: #7fd1a1; }
+.meterFill.loud { background: #ff8a4c; }
+.meterTick { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; }
+.pill { font: 600 12px/1 var(--f-body); color: #fff; background: rgba(0,0,0,.6); padding: 5px 8px; border-radius: 99px; white-space: nowrap; }
+.pill.on { background: #1d7f47; }
+.pill.warn { background: #a86b0f; }
+
+.side { display: grid; gap: 12px; min-width: 0; }
+.upnext { background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.upnext .label { font: 600 12px/1 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.upnext .who { font: 700 30px/1.05 var(--f-display); margin-top: 4px; text-wrap: balance; }
+.upnext .where { color: var(--muted); font-size: 15px; }
+.upnext.rotate { border-color: var(--clay); }
+.upnext.rotate .who { color: var(--clay); }
+
+.call { border-radius: 12px; padding: 14px; background: var(--surface); border: 1.5px solid var(--line); display: grid; gap: 8px; }
+.call.hit { background: var(--hit-bg); border-color: var(--hit); }
+.call.miss { background: var(--miss-bg); border-color: var(--miss); }
+.call.unsure { background: var(--unsure-bg); border-color: var(--unsure); }
+.callHead { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.callHead b { color: var(--ink); }
+.callResult { font: 700 44px/1 var(--f-display); letter-spacing: .02em; text-transform: uppercase; }
+.call.hit .callResult { color: var(--hit); } .call.miss .callResult { color: var(--miss); } .call.unsure .callResult { color: var(--unsure); }
+.callWhy { font-size: 14px; color: var(--muted); min-height: 1.45em; }
+.callBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.callBtns button { min-height: 60px; font: 700 24px/1 var(--f-display); text-transform: uppercase; letter-spacing: .04em; }
+button.hitBtn.sel { background: var(--hit); border-color: var(--hit); color: #fff; }
+button.missBtn.sel { background: var(--miss); border-color: var(--miss); color: #fff; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row button { flex: 1 1 auto; }
+
+.sheet { background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.sheetHead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+h2 { font: 700 22px/1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; margin: 0; }
+.squad { color: var(--muted); font-variant-numeric: tabular-nums; }
+.sheetScroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+th { font: 600 11px/1 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td.name { font-weight: 600; white-space: nowrap; max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
+td.name small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+tr.active td.name { color: var(--clay); }
+.grp { display: inline-grid; grid-template-columns: repeat(5, 1fr); gap: 2px; position: relative; padding-top: 12px; }
+.grp i { position: absolute; top: 0; left: 0; font: 600 10px/1 var(--f-body); font-style: normal; color: var(--muted); letter-spacing: .04em; }
+.box { width: 24px; height: 28px; padding: 0; min-height: 0; border-radius: 4px; border: 1.5px solid var(--line); background: transparent;
+  font: 700 17px/1 var(--f-display); display: grid; place-items: center; }
+.box.hit { color: var(--hit); border-color: var(--hit); }
+.box.miss { color: var(--miss); border-color: var(--miss); }
+.box.unsure, .box.judging { color: var(--unsure); border-color: var(--unsure); background: var(--unsure-bg); }
+.box.next { border-color: var(--clay); border-width: 2.5px; }
+.box.sel { box-shadow: 0 0 0 2px var(--ink); }
+td.tot { font: 700 22px/1 var(--f-display); text-align: right; white-space: nowrap; }
+td.tot small { font: 500 12px/1 var(--f-body); color: var(--muted); }
+.legend { margin: 0; color: var(--muted); font-size: 13px; }
+.toast { color: var(--hit); font-weight: 600; font-size: 14px; }
+
+details.settings { background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 0 14px; }
+details.settings summary { cursor: pointer; padding: 14px 0; font: 700 20px/1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; }
+.setGrid { display: grid; gap: 16px; padding-bottom: 16px; }
+@media (min-width: 760px) { .setGrid { grid-template-columns: 1fr 1fr; } }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+legend { font-weight: 600; margin-bottom: 4px; padding: 0; }
+.nameRow { display: grid; grid-template-columns: 4.5em 1fr; gap: 8px; align-items: center; color: var(--muted); font-size: 14px; }
+input[type=text] { font: 16px var(--f-body); color: var(--ink); background: var(--bg); border: 1.5px solid var(--line); border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0; }
+input[type=range] { width: 100%; accent-color: var(--clay); }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+.check input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--clay); flex: none; }
+.confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px; border-radius: 10px; background: var(--miss-bg); }
+.confirm button.danger { background: var(--miss); border-color: var(--miss); color: #fff; }
+.status { font-size: 14px; color: var(--muted); margin: 0; }
+.status.err { color: var(--miss); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"></div>
+      <div><h1>Trap Line Scorer</h1><p class="progress" id="progress">Shot 0 of 125</p></div>
+    </div>
+    <button id="startBtn" class="primary">Start camera &amp; mic</button>
+  </header>
+  <p class="status" id="status" hidden></p>
+
+  <section class="stage">
+    <div class="videoWrap" id="videoWrap">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="overlay"></canvas>
+      <div class="skyline" id="skyline"><span>Clays tracked above this line</span></div>
+      <div class="placeholder" id="placeholder">
+        <strong>Camera off</strong>
+        <p>Put the phone on the tripod behind the line, then tap <b>Start camera &amp; mic</b>. Frame the sky above the trap house.</p>
+      </div>
+      <div class="hud">
+        <div class="meter" title="Microphone level. A shot is counted when the level crosses the white mark.">
+          <div class="meterFill" id="meterFill"></div><div class="meterTick" id="meterTick"></div>
+        </div>
+        <span class="pill" id="clayPill">Clay: not seen</span>
+        <span class="pill" id="listenPill">Not listening</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="upnext" id="upNext"></div>
+      <div class="call" id="callPanel">
+        <div class="callHead"><span id="callWho">No shots yet</span><span id="callBy"></span></div>
+        <div class="callResult" id="callResult">Waiting</div>
+        <div class="callWhy" id="callWhy">Each gunshot moves the scoresheet to the next shooter.</div>
+        <div class="callBtns">
+          <button id="hitBtn" class="hitBtn" disabled>Hit</button>
+          <button id="missBtn" class="missBtn" disabled>Miss</button>
+        </div>
+      </div>
+      <div class="row">
+        <button id="shotBtn">+ Add shot</button>
+        <button id="undoBtn">Undo last shot</button>
+        <button id="pauseBtn" disabled>Pause listening</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheetHead"><h2>Scoresheet</h2><span class="squad" id="squadTotal"></span></div>
+    <div class="sheetScroll"><table id="sheet"></table></div>
+    <p class="legend">/ hit &nbsp;·&nbsp; O miss &nbsp;·&nbsp; ? needs your call. The small number above each group is the station. Tap any box to change it.</p>
+    <div class="row">
+      <button id="copyBtn">Copy scores</button>
+      <button id="dlBtn">Download CSV</button>
+      <span class="toast" id="toast" role="status"></span>
+    </div>
+  </section>
+
+  <details class="settings" id="settingsBox">
+    <summary>Squad &amp; settings</summary>
+    <div class="setGrid">
+      <fieldset>
+        <legend>Squad order (post 1 to post 5 at the start)</legend>
+        <div id="nameRows"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Shot detection</legend>
+        <label for="sens">Microphone sensitivity: <b id="sensVal"></b></label>
+        <input type="range" id="sens" min="1" max="10" step="1">
+        <p class="hint">Raise it if shots are missed. Lower it if talking or a neighboring field adds shots. Gunshots should jump past the white mark on the level bar.</p>
+        <label for="sky">Sky line: <b id="skyVal"></b></label>
+        <input type="range" id="sky" min="20" max="100" step="1">
+        <p class="hint">Drag the dashed line just below where clays fly. Orange things below it (vests, trap house, cones) are ignored.</p>
+        <label class="check"><input type="checkbox" id="auto"> <span>Accept camera calls automatically. When off, the camera only suggests and you tap Hit or Miss.</span></label>
+        <label class="check"><input type="checkbox" id="showMask"> <span>Show what the camera thinks is a clay (boxes on the video)</span></label>
+      </fieldset>
+      <div class="row" style="grid-column: 1 / -1">
+        <button id="newBtn">Start a new round</button>
+      </div>
+      <div class="confirm" id="confirmBox" hidden style="grid-column: 1 / -1">
+        <span id="confirmText"></span>
+        <button class="danger" id="confirmYes">Clear scoresheet</button>
+        <button id="confirmNo">Keep it</button>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const SQUAD = 5, PER_POST = 5, TOTAL = SQUAD * PER_POST * 5;   // 125 shots in a 25-target round
+  const JUDGE_DELAY = 950;   // ms after the shot to make the hit/miss call
+  const REFRACTORY = 1400;   // ms: ignore echoes and the same blast in the next audio window
+  const $ = id => document.getElementById(id);
+
+  // ---------- storage (per-device convenience) ----------
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+  const defaults = { names: ["Shooter 1", "Shooter 2", "Shooter 3", "Shooter 4", "Shooter 5"], sens: 6, sky: 65, auto: true, showMask: true };
+  const settings = Object.assign({}, defaults, store.get("tls.settings") || {});
+  let shots = store.get("tls.shots") || [];
+  shots.forEach(s => { if (s.result === "judging") { s.result = "unsure"; s.why = "Page was reloaded before the call was made."; } });
+  let selected = shots.length ? shots.length - 1 : null;
+  const save = () => { store.set("tls.settings", settings); store.set("tls.shots", shots); };
+
+  // ---------- round bookkeeping ----------
+  // Firing order never changes: post 1, 2, 3, 4, 5, five times, then everyone moves one post right (post 5 walks to post 1).
+  function slot(n) {
+    const s = n % SQUAD, block = Math.floor(n / (SQUAD * PER_POST));
+    return { s, block, station: ((s + block) % SQUAD) + 1, target: Math.floor((n % (SQUAD * PER_POST)) / SQUAD) + 1 };
+  }
+  const nameOf = s => (settings.names[s] || "").trim() || `Shooter ${s + 1}`;
+
+  function addShot(t, how) {
+    if (shots.length >= TOTAL) { flash("Round is complete. Start a new round in settings."); return; }
+    const n = shots.length;
+    const canJudge = vision.ready;
+    shots.push({ n, t: Math.round(t), result: canJudge && how === "sound" ? "judging" : "unsure",
+      by: "", why: canJudge && how === "sound" ? "" : "Added by hand. Tap Hit or Miss." });
+    selected = n;
+    save(); render();
+    if (canJudge && how === "sound") setTimeout(() => decide(n, t), JUDGE_DELAY);
+  }
+
+  function decide(n, t) {
+    const s = shots[n];
+    if (!s || s.t !== Math.round(t) || s.result !== "judging") return;
+    const v = judge(vision.frames, t, vision.W, vision.H, vision.skyY);
+    if (settings.auto && v.r !== "unsure") { s.result = v.r; s.by = "camera"; s.why = v.why; }
+    else { s.result = "unsure"; s.by = ""; s.why = v.r === "unsure" ? v.why : `Camera suggests ${v.r.toUpperCase()}: ${v.why}`; }
+    save(); render();
+  }
+
+  function setResult(n, r) {
+    const s = shots[n]; if (!s) return;
+    s.result = r; s.by = "coach";
+    save(); render();
+  }
+
+  // ---------- hit / miss judgement from per-frame clay stats ----------
+  // Each frame record: {t, area, blobs, minx, maxx, miny, maxy, cx, cy}
+  function judge(frames, T, W, H, skyY) {
+    const pre = frames.filter(f => f.t >= T - 500 && f.t <= T);
+    const post = frames.filter(f => f.t >= T + 60 && f.t <= T + 900);
+    if (!post.length) return { r: "unsure", why: "No video frames after the shot." };
+    const seenPre = pre.filter(f => f.area > 0), visPost = post.filter(f => f.area > 0);
+    if (!seenPre.length && !visPost.length) return { r: "unsure", why: "Couldn't see the clay. Check the camera aim and the sky line." };
+    const diag = f => Math.hypot(f.maxx - f.minx + 1, f.maxy - f.miny + 1);
+    const ref = seenPre.slice(-3);
+    const preArea = ref.length ? Math.max(...ref.map(f => f.area)) : 1;
+    const preBlobs = ref.length ? Math.max(1, ...ref.map(f => f.blobs)) : 1;
+    const preDiag = ref.length ? Math.max(2, ...ref.map(diag)) : 2;
+    const last = seenPre[seenPre.length - 1];
+    const nearEdge = f => f.cx < W * .04 || f.cx > W * .96 || f.cy < H * .04 || f.cy > skyY - H * .04;
+
+    let hit = 0, miss = 0; const hitWhy = [], missWhy = [];
+    const frag = post.filter(f => f.blobs >= preBlobs + 2).length;
+    const plus1 = post.filter(f => f.blobs === preBlobs + 1).length;
+    if (frag >= 2) { hit += 2; hitWhy.push("broke into pieces"); }
+    else if (plus1 >= 3) { hit += 1; hitWhy.push("a piece came off"); }
+    const maxDiag = visPost.length ? Math.max(...visPost.map(diag)) : 0;
+    if (ref.length && maxDiag >= 3 * preDiag && maxDiag >= 8) { hit += 1.5; hitWhy.push("fragments spread out"); }
+    if (ref.length && visPost.some(f => f.area >= 3 * preArea + 6)) { hit += 1; hitWhy.push("puff of dust"); }
+    if (last && T - last.t <= 200 && !nearEdge(last)) {
+      const early = post.filter(f => f.t >= T + 100 && f.t <= T + 500);
+      const gone = early.filter(f => f.area === 0).length;
+      if (early.length >= 4 && gone / early.length >= 0.7) { hit += 1.5; hitWhy.push("clay vanished in mid-air"); }
+    }
+    const later = post.filter(f => f.t >= T + 100);
+    const visible = later.filter(f => f.area > 0).length;
+    const intact = later.filter(f => f.area > 0 && f.blobs <= preBlobs && f.area <= 3 * preArea + 6).length;
+    if (ref.length && intact >= 6 && intact / Math.max(visible, 1) >= 0.75) { miss += 2.5; missWhy.push("clay kept flying in one piece"); }
+
+    const d = hit - miss, cap = a => a.join(", ").replace(/^./, c => c.toUpperCase()) + ".";
+    if (d >= 1.5) return { r: "hit", why: cap(hitWhy) };
+    if (d <= -1.5) return { r: "miss", why: cap(missWhy) };
+    if (hitWhy.length || missWhy.length) return { r: "unsure", why: `Mixed signals (${hitWhy.concat(missWhy).join(", ")}). Tap Hit or Miss.` };
+    return { r: "unsure", why: "Clay seen but no clear break or clean flight. Tap Hit or Miss." };
+  }
+
+  // ---------- camera: find orange clays every frame ----------
+  const video = $("video"), overlay = $("overlay"), octx = overlay.getContext("2d");
+  const work = document.createElement("canvas"), wctx = work.getContext("2d", { willReadFrequently: true });
+  const vision = { ready: false, frames: [], W: 0, H: 0, skyY: 0, bg: null, mask: null, label: null, stack: null };
+
+  function setupVision() {
+    const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
+    const W = 640, H = Math.round(W * vh / vw);
+    Object.assign(vision, { W, H, bg: new Float32Array(W * H), mask: new Uint8Array(W * H), label: new Int32Array(W * H), stack: new Int32Array(W * H), frames: [] });
+    work.width = overlay.width = W; work.height = overlay.height = H;
+    $("videoWrap").style.aspectRatio = `${vw} / ${vh}`;
+    vision.ready = true;
+  }
+
+  function processFrame() {
+    const { W, H, bg, mask, label, stack } = vision;
+    const yMax = Math.max(1, Math.min(H, Math.round(H * settings.sky / 100)));
+    vision.skyY = yMax;
+    wctx.drawImage(video, 0, 0, W, H);
+    const d = wctx.getImageData(0, 0, W, yMax).data;
+    const n = W * yMax;
+    let area = 0;
+    for (let p = 0, i = 0; p < n; p++, i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      let on = 0;
+      // orange: red strongest, green middle, well saturated, hue roughly 6-48 degrees
+      if (r > 95 && r >= g && g >= b) {
+        const c = r - b;
+        if (c > r * 0.38) { const h = 60 * (g - b) / c; if (h >= 6 && h <= 48) on = 1; }
+      }
+      const a = bg[p] = bg[p] * 0.98 + on * 0.02;   // pixels orange for a second or more are scenery
+      const m = on && a < 0.5 ? 1 : 0;
+      mask[p] = m; area += m;
+    }
+    const f = { t: performance.now(), area, blobs: 0, minx: W, maxx: -1, miny: H, maxy: -1, cx: 0, cy: 0 };
+    const boxes = [];
+    if (area > 0 && area < n * 0.03) {
+      label.fill(0, 0, n);
+      let sx = 0, sy = 0;
+      for (let p = 0; p < n; p++) {
+        if (!mask[p] || label[p]) continue;
+        f.blobs++;
+        let top = 0; stack[top++] = p; label[p] = f.blobs;
+        let bx0 = W, bx1 = -1, by0 = H, by1 = -1;
+        while (top) {
+          const q = stack[--top], x = q % W, y = (q - x) / W;
+          sx += x; sy += y;
+          if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+          for (let dy = -1; dy <= 1; dy++) {
+            const yy = y + dy; if (yy < 0 || yy >= yMax) continue;
+            for (let dx = -1; dx <= 1; dx++) {
+              const xx = x + dx; if (xx < 0 || xx >= W) continue;
+              const k = yy * W + xx;
+              if (mask[k] && !label[k]) { label[k] = f.blobs; stack[top++] = k; }
+            }
+          }
+        }
+        boxes.push([bx0, by0, bx1, by1]);
+        if (bx0 < f.minx) f.minx = bx0; if (bx1 > f.maxx) f.maxx = bx1;
+        if (by0 < f.miny) f.miny = by0; if (by1 > f.maxy) f.maxy = by1;
+      }
+      f.cx = sx / area; f.cy = sy / area;
+    } else if (area > 0) { f.area = -1; }   // too much orange (sunset, vest up close): ignore this frame
+    if (f.area < 0) f.area = 0;
+    const fr = vision.frames; fr.push(f);
+    while (fr.length && fr[0].t < f.t - 4000) fr.shift();
+
+    octx.clearRect(0, 0, W, H);
+    if (settings.showMask && boxes.length) {
+      octx.strokeStyle = "#00e5ff"; octx.lineWidth = 2;
+      for (const [x0, y0, x1, y1] of boxes) octx.strokeRect(x0 - 5, y0 - 5, x1 - x0 + 11, y1 - y0 + 11);
+    }
+    const pill = $("clayPill");
+    pill.textContent = f.blobs ? (f.blobs > 1 ? `Clay: ${f.blobs} pieces` : "Clay: in view") : "Clay: not seen";
+    pill.className = "pill" + (f.blobs ? " on" : "");
+  }
+
+  function frameLoop() {
+    if (!running) return;
+    if (video.readyState >= 2 && vision.ready) { try { processFrame(); } catch (e) { console.error(e); } }
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(frameLoop); else requestAnimationFrame(frameLoop);
+  }
+
+  // ---------- microphone: count gunshots ----------
+  let running = false, listening = false, actx = null, analyser = null, abuf = null, bgLevel = 0.01, meter = 0, lastShot = -1e9, audioTimer = null;
+  const threshold = () => 0.95 - (settings.sens - 1) * 0.085;   // sensitivity 1..10 -> peak 0.95..0.185
+
+  function audioTick() {
+    analyser.getFloatTimeDomainData(abuf);
+    let pk = 0, ss = 0;
+    for (let i = 0; i < abuf.length; i++) { const v = abuf[i], a = v < 0 ? -v : v; if (a > pk) pk = a; ss += v * v; }
+    const rms = Math.sqrt(ss / abuf.length), now = performance.now(), thr = threshold();
+    meter = Math.max(pk, meter * 0.88);
+    const fill = $("meterFill");
+    fill.style.width = Math.min(100, meter * 100) + "%";
+    fill.classList.toggle("loud", meter >= thr);
+    if (listening && pk >= thr && pk >= 6 * bgLevel && now - lastShot > REFRACTORY) {
+      lastShot = now;
+      addShot(now - 30, "sound");
+    } else if (now - lastShot > REFRACTORY) {
+      bgLevel = bgLevel * 0.995 + rms * 0.005;
+    }
+  }
+
+  let stream = null, wakeLock = null;
+  async function start() {
+    const st = $("status");
+    st.hidden = false; st.className = "status"; st.textContent = "Asking for camera and microphone…";
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      st.className = "status err";
+      st.textContent = "This browser can't open the camera here. Open the page from an https:// address in Safari or Chrome. You can still score with + Add shot.";
+      return;
+    }
+    const vc = { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } };
+    const ac = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    let got = null, note = "";
+    for (const c of [{ video: vc, audio: ac }, { audio: ac }, { video: vc }]) {
+      try { got = await navigator.mediaDevices.getUserMedia(c); break; } catch (e) { note = e && e.name; }
+    }
+    if (!got) {
+      st.className = "status err";
+      st.textContent = `Camera and microphone were blocked (${note || "no permission"}). Allow them in the browser's site settings, or score with + Add shot.`;
+      return;
+    }
+    stream = got; running = true;
+    const hasV = stream.getVideoTracks().length > 0, hasA = stream.getAudioTracks().length > 0;
+    if (hasV) {
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      if (!video.videoWidth) await new Promise(r => video.addEventListener("loadedmetadata", r, { once: true }));
+      setupVision();
+      $("placeholder").hidden = true;
+      frameLoop();
+    }
+    if (hasA) {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      await actx.resume().catch(() => {});
+      const src = actx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+      analyser = actx.createAnalyser(); analyser.fftSize = 2048; abuf = new Float32Array(analyser.fftSize);
+      src.connect(analyser);
+      audioTimer = setInterval(audioTick, 15);
+      listening = true;
+    }
+    st.textContent = hasV && hasA ? "Camera and microphone on. Shots are counted by sound and called by camera."
+      : hasA ? "Microphone only: shots are counted, but you'll tap Hit or Miss for each one."
+      : "Camera only: no microphone, so use + Add shot after each shot.";
+    $("startBtn").textContent = "Running"; $("startBtn").disabled = true;
+    $("pauseBtn").disabled = !hasA;
+    keepAwake();
+    renderListen();
+  }
+
+  async function keepAwake() {
+    try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => { if (running && document.visibilityState === "visible") keepAwake(); });
+
+  function renderListen() {
+    const p = $("listenPill");
+    p.textContent = !analyser ? "Mic off" : listening ? "Listening for shots" : "Paused";
+    p.className = "pill" + (analyser && listening ? " on" : analyser ? " warn" : "");
+    $("pauseBtn").textContent = listening ? "Pause listening" : "Resume listening";
+  }
+
+  // ---------- rendering ----------
+  const markOf = r => r === "hit" ? "/" : r === "miss" ? "O" : r === "judging" ? "…" : "?";
+  const resultText = { hit: "Hit", miss: "Miss", unsure: "Your call", judging: "Judging…" };
+
+  function render() {
+    const n = shots.length;
+    $("progress").textContent = `Shot ${n} of ${TOTAL}` + (n < TOTAL ? ` · Station rotation ${Math.min(5, Math.floor(n / 25) + 1)} of 5` : " · Round complete");
+
+    // up next
+    const up = $("upNext");
+    if (n >= TOTAL) {
+      up.className = "upnext"; up.innerHTML = `<div class="label">Round complete</div><div class="who">All 125 targets shot</div><div class="where">Copy or download the scores below.</div>`;
+    } else {
+      const sl = slot(n);
+      const rotate = n > 0 && n % 25 === 0;
+      up.className = "upnext" + (rotate ? " rotate" : "");
+      up.innerHTML = `<div class="label">${rotate ? "Rotate: everyone moves one post right, post 5 walks to post 1" : "Up next"}</div>
+        <div class="who"></div><div class="where">Post ${sl.station} · target ${sl.target} of 5 at this post</div>`;
+      up.querySelector(".who").textContent = nameOf(sl.s);
+    }
+
+    // call panel
+    const cp = $("callPanel"), s = selected != null ? shots[selected] : null;
+    if (!s) {
+      cp.className = "call"; $("callWho").textContent = "No shots yet"; $("callBy").textContent = "";
+      $("callResult").textContent = "Waiting"; $("callWhy").textContent = "Each gunshot moves the scoresheet to the next shooter.";
+      $("hitBtn").disabled = $("missBtn").disabled = true;
+      $("hitBtn").classList.remove("sel"); $("missBtn").classList.remove("sel");
+    } else {
+      const sl = slot(s.n);
+      cp.className = "call " + s.result;
+      $("callWho").innerHTML = `Shot ${s.n + 1} · <b></b> · post ${sl.station}`;
+      $("callWho").querySelector("b").textContent = nameOf(sl.s);
+      $("callBy").textContent = s.by === "camera" ? "Camera call" : s.by === "coach" ? "Coach call" : "";
+      $("callResult").textContent = resultText[s.result] || "—";
+      $("callWhy").textContent = s.by === "coach" ? "Set by you." : (s.why || "");
+      $("hitBtn").disabled = $("missBtn").disabled = false;
+      $("hitBtn").classList.toggle("sel", s.result === "hit");
+      $("missBtn").classList.toggle("sel", s.result === "miss");
+    }
+
+    // scoresheet
+    const nextN = n < TOTAL ? n : -1;
+    let html = `<thead><tr><th>Shooter</th>${[1,2,3,4,5].map(i => `<th>${["1st","2nd","3rd","4th","5th"][i-1]} post</th>`).join("")}<th style="text-align:right">Total</th></tr></thead><tbody>`;
+    let squadHits = 0, squadShot = 0;
+    for (let sh = 0; sh < SQUAD; sh++) {
+      let hits = 0, taken = 0;
+      const active = nextN >= 0 && slot(nextN).s === sh;
+      html += `<tr class="${active ? "active" : ""}"><td class="name"><span data-name="${sh}"></span><small>starts post ${sh + 1}</small></td>`;
+      for (let b = 0; b < 5; b++) {
+        html += `<td><div class="grp"><i>P${((sh + b) % 5) + 1}</i>`;
+        for (let k = 0; k < 5; k++) {
+          const idx = b * 25 + k * 5 + sh, shot = shots[idx];
+          if (shot) { taken++; if (shot.result === "hit") hits++; }
+          const cls = ["box", shot ? shot.result : "", idx === nextN ? "next" : "", idx === selected ? "sel" : ""].join(" ");
+          html += `<button class="${cls}" data-n="${idx}" ${shot ? "" : "disabled"} aria-label="Shot ${idx + 1}">${shot ? markOf(shot.result) : ""}</button>`;
+        }
+        html += `</div></td>`;
+      }
+      squadHits += hits; squadShot += taken;
+      html += `<td class="tot">${hits}<small> / ${taken}</small></td></tr>`;
+    }
+    html += "</tbody>";
+    const t = $("sheet"); t.innerHTML = html;
+    t.querySelectorAll("[data-name]").forEach(el => el.textContent = nameOf(+el.dataset.name));
+    const pending = shots.filter(x => x.result === "unsure").length;
+    $("squadTotal").textContent = `Squad ${squadHits} / ${squadShot}` + (pending ? ` · ${pending} need${pending === 1 ? "s" : ""} your call` : "");
+    $("undoBtn").disabled = n === 0;
+    $("shotBtn").disabled = n >= TOTAL;
+  }
+
+  // ---------- export ----------
+  function csv() {
+    const rows = [["Shooter", "Name", "Hits", "Targets shot", "Needs call"]];
+    for (let sh = 0; sh < SQUAD; sh++) {
+      const mine = shots.filter(x => slot(x.n).s === sh);
+      rows.push([sh + 1, nameOf(sh), mine.filter(x => x.result === "hit").length, mine.length, mine.filter(x => x.result === "unsure").length]);
+    }
+    rows.push([]);
+    rows.push(["Shot", "Shooter", "Name", "Post", "Target at post", "Result", "Called by", "Notes"]);
+    for (const x of shots) {
+      const sl = slot(x.n);
+      rows.push([x.n + 1, sl.s + 1, nameOf(sl.s), sl.station, sl.target, x.result === "unsure" ? "needs call" : x.result, x.by || "", x.why || ""]);
+    }
+    return rows.map(r => r.map(v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(",")).join("\n");
+  }
+  let toastTimer = null;
+  function flash(msg) { const t = $("toast"); t.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.textContent = "", 3500); }
+
+  // ---------- wiring ----------
+  $("startBtn").addEventListener("click", start);
+  $("shotBtn").addEventListener("click", () => addShot(performance.now(), "hand"));
+  $("undoBtn").addEventListener("click", () => {
+    if (!shots.length) return;
+    const gone = shots.pop(); selected = shots.length ? shots.length - 1 : null;
+    save(); render(); flash(`Removed shot ${gone.n + 1}.`);
+  });
+  $("pauseBtn").addEventListener("click", () => { listening = !listening; renderListen(); });
+  $("hitBtn").addEventListener("click", () => selected != null && setResult(selected, "hit"));
+  $("missBtn").addEventListener("click", () => selected != null && setResult(selected, "miss"));
+  $("sheet").addEventListener("click", e => {
+    const b = e.target.closest("button[data-n]"); if (!b || b.disabled) return;
+    selected = +b.dataset.n; render();
+    $("callPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  $("copyBtn").addEventListener("click", () => {
+    const text = csv();
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => flash("Scores copied. Paste into a spreadsheet."), () => flash("Copy was blocked. Use Download CSV."));
+    else flash("Copy isn't available here. Use Download CSV.");
+  });
+  if (window.claude) $("dlBtn").hidden = true;   // file downloads are blocked inside a Claude artifact preview
+  $("dlBtn").addEventListener("click", () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv()], { type: "text/csv" }));
+    a.download = `trap-scores-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // settings
+  const nameRows = $("nameRows");
+  for (let i = 0; i < SQUAD; i++) {
+    const row = document.createElement("label"); row.className = "nameRow"; row.htmlFor = "name" + i;
+    row.innerHTML = `<span>Post ${i + 1}</span><input type="text" id="name${i}" autocomplete="off" maxlength="24">`;
+    nameRows.appendChild(row);
+    const inp = row.querySelector("input"); inp.value = settings.names[i] || "";
+    inp.addEventListener("input", () => { settings.names[i] = inp.value; save(); render(); });
+  }
+  const sens = $("sens"), sky = $("sky"), auto = $("auto"), showMask = $("showMask");
+  sens.value = settings.sens; sky.value = settings.sky; auto.checked = settings.auto; showMask.checked = settings.showMask;
+  function renderSettings() {
+    $("sensVal").textContent = settings.sens;
+    $("skyVal").textContent = settings.sky + "% down the picture";
+    $("meterTick").style.left = (threshold() * 100) + "%";
+    $("skyline").style.top = settings.sky + "%";
+    $("skyline").hidden = settings.sky >= 100;
+  }
+  sens.addEventListener("input", () => { settings.sens = +sens.value; save(); renderSettings(); });
+  sky.addEventListener("input", () => { settings.sky = +sky.value; save(); renderSettings(); });
+  auto.addEventListener("change", () => { settings.auto = auto.checked; save(); });
+  showMask.addEventListener("change", () => { settings.showMask = showMask.checked; save(); if (!showMask.checked) octx.clearRect(0, 0, overlay.width, overlay.height); });
+  $("newBtn").addEventListener("click", () => {
+    $("confirmText").textContent = shots.length ? `Clear all ${shots.length} shots from the scoresheet? Names and settings stay.` : "The scoresheet is already empty.";
+    $("confirmYes").hidden = !shots.length;
+    $("confirmBox").hidden = false;
+  });
+  $("confirmNo").addEventListener("click", () => $("confirmBox").hidden = true);
+  $("confirmYes").addEventListener("click", () => { shots = []; selected = null; save(); render(); $("confirmBox").hidden = true; flash("New round started."); });
+
+  renderSettings(); renderListen(); render();
+  window.__tls = { judge, slot, get shots() { return shots; }, vision };   // for testing
+})();
+</script>
+
+</body></html>
