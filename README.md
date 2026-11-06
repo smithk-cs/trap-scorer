@@ -9,9 +9,9 @@ A phone web page that scores a five-person trap squad live from a tripod behind 
   Partial and full breaks both count as hits. It also tracks the clay's flight path: a sudden turn or slow-down right
   after the shot supports a hit. A clay that only changes course, with no broken piece seen, is marked **?** for you
   to check, because a target needs a visible piece broken to score.
-- **Photographs every shot.** Five pictures from the moment of the shot to about 0.75 s after. Tap any score on the
-  scoresheet to open them: the viewer zooms in on where the clay was (dashed circle), and you can confirm or change
-  the call right there.
+- **Photographs every shot.** A burst of nine pictures from the moment of the shot to about 0.75 s after. Tap any
+  score on the scoresheet to open them: the viewer zooms in on where the clay was (dashed circle), **Play** runs the
+  burst like a slow-motion clip, and you can confirm or change the call right there.
 - **Asks you when it isn't sure.** Unclear shots show **?** until you tap **Hit** or **Miss**. You can also mark any
   shot unknown yourself with the **?** button. Unknown shots don't count toward the total until you decide.
 - **Scoresheet** uses the usual marks (`/` hit, `O` miss), grouped by post, with totals per shooter and for the squad.
@@ -29,6 +29,18 @@ Hosted with GitHub Pages. To turn it on (once): **Settings → Pages → Build a
 branch → Branch: `main`, `/ (root)` → Save.** Every push to `main` updates the page within a minute or two.
 
 The page must be opened from an `https://` address: phones only give the camera and microphone to secure pages.
+
+## Test mode
+
+Tap **Test mode** at the top. It uses a separate practice scoresheet that is never saved or mixed into your real round;
+**Exit test mode** brings your real round back exactly as it was.
+
+- **Run simulated range:** the phone generates a video of a trap field with a clay about every 3 seconds (clean breaks,
+  dusted targets, small chips and misses) and runs it through the same shot counting, camera calls and photos as a
+  real round. The app knows what really happened to each simulated clay, so the test bar shows how many camera calls
+  were right, wrong or left for you. Tap any score to see its photos and the real result. No gun, range or camera needed.
+- **Start camera & mic:** practice with your own camera and microphone. Clap to make a shot, and use it to check camera
+  aim, the sky line and microphone sensitivity before a real round.
 
 ## At the range
 

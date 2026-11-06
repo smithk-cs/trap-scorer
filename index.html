@@ -149,14 +149,22 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
 .vRing { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border: 2px dashed #00e5ff; border-radius: 50%; pointer-events: none; }
 .vStamp { position: absolute; left: 8px; top: 8px; font: 600 12px/1 var(--f-body); color: #fff; background: rgba(0,0,0,.6); padding: 5px 8px; border-radius: 99px; }
 .vEmpty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; margin: 0; color: #cfd9d2; font-size: 15px; }
-.vStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-.vStrip button { padding: 0; min-height: 0; border-radius: 6px; overflow: hidden; display: grid; border-width: 2px; }
+.vStrip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.vStrip button { flex: 0 0 calc((100% - 24px) / 5); padding: 0; min-height: 0; border-radius: 6px; overflow: hidden; display: grid; border-width: 2px; }
 .vStrip button.sel { border-color: var(--clay); }
 .vStrip img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--video-bg); }
 .vStrip span { font: 600 11px/1 var(--f-body); color: var(--muted); padding: 4px 2px; text-align: center; font-variant-numeric: tabular-nums; }
 .vTools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .vWhy { color: var(--muted); font-size: 14px; flex: 1 1 200px; min-width: 0; }
 .vNav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.headBtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.testBar { background: var(--unsure-bg); border: 2px dashed var(--unsure); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; }
+.testHead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.testHead b { font: 700 22px/1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; color: var(--unsure); }
+.testHead span { color: var(--ink); font-size: 14px; }
+.testStats { margin: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
+.testStats b.ok { color: var(--hit); } .testStats b.bad { color: var(--miss); } .testStats b.q { color: var(--unsure); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -167,8 +175,19 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       <div class="mark" aria-hidden="true"></div>
       <div><h1>Trap Line Scorer</h1><p class="progress" id="progress">Shot 0 of 125</p></div>
     </div>
-    <button id="startBtn" class="primary">Start camera &amp; mic</button>
+    <div class="headBtns">
+      <button id="testBtn">Test mode</button>
+      <button id="startBtn" class="primary">Start camera &amp; mic</button>
+    </div>
   </header>
+  <section class="testBar" id="testBar" hidden>
+    <div class="testHead"><b>Test mode</b><span>Practice scoresheet. Nothing here is saved or mixed into your real round.</span></div>
+    <div class="row">
+      <button id="simBtn" class="primary">Run simulated range</button>
+      <button id="exitTestBtn">Exit test mode</button>
+    </div>
+    <p class="testStats" id="testStats"></p>
+  </section>
   <p class="status" id="status" hidden></p>
 
   <section class="stage">
@@ -264,7 +283,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       <p class="vEmpty" id="vEmpty" hidden></p>
     </div>
     <div class="vStrip" id="vStrip"></div>
-    <div class="vTools"><button id="vZoom">Show full picture</button><span class="vWhy" id="vWhy"></span></div>
+    <div class="vTools"><button id="vPlay">&#x25B6; Play</button><button id="vZoom">Show full picture</button><span class="vWhy" id="vWhy"></span></div>
     <div class="callBtns"><button id="vHit" class="hitBtn">Hit</button><button id="vMiss" class="missBtn">Miss</button><button id="vUnk" class="unkBtn" aria-label="Not sure: mark unknown">?</button></div>
     <div class="vNav"><button id="vPrev">&#x2039; Previous shot</button><button id="vNext">Next shot &#x203A;</button></div>
   </div>
@@ -288,7 +307,8 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   let shots = store.get("tls.shots") || [];
   shots.forEach(s => { if (s.result === "judging") { s.result = "unsure"; s.why = "Page was reloaded before the call was made."; } });
   let selected = shots.length ? shots.length - 1 : null;
-  const save = () => { store.set("tls.settings", settings); store.set("tls.shots", shots); };
+  let mode = "live";   // "test" uses a separate scoresheet kept only in memory
+  const save = () => { store.set("tls.settings", settings); if (mode === "live") store.set("tls.shots", shots); };
   const newRoundId = () => Date.now().toString(36);
   let roundId = store.get("tls.round") || newRoundId();
   store.set("tls.round", roundId);
@@ -316,7 +336,16 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       });
     };
     return {
-      async put(k, v) { const r = await run("readwrite", s => s.put(v, k)); if (r.ok) mem.delete(k); else mem.set(k, v); },
+      async put(k, v) {
+        if (k.startsWith("test:")) {   // test photos stay in memory; keep only the latest 30 shots
+          mem.set(k, v);
+          const tk = [...mem.keys()].filter(x => x.startsWith("test:"));
+          while (tk.length > 30) mem.delete(tk.shift());
+          return;
+        }
+        const r = await run("readwrite", s => s.put(v, k)); if (r.ok) mem.delete(k); else mem.set(k, v);
+      },
+      clearTest() { for (const k of [...mem.keys()]) if (k.startsWith("test:")) mem.delete(k); },
       async get(k) { if (mem.has(k)) return mem.get(k); const r = await run("readonly", s => s.get(k)); return r.ok ? r.value || null : null; },
       async del(k) { mem.delete(k); await run("readwrite", s => s.delete(k)); },
       async clear() { mem.clear(); await run("readwrite", s => s.clear()); }
@@ -335,7 +364,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   const nameOf = s => (settings.names[s] || "").trim() || `Shooter ${s + 1}`;
 
   function addShot(t, how) {
-    if (shots.length >= TOTAL) { flash("Round is complete. Start a new round in settings."); return; }
+    if (shots.length >= TOTAL) { flash("Round is complete. Start a new round in settings."); return -1; }
     const n = shots.length;
     const canJudge = vision.ready;
     shots.push({ n, t: Math.round(t), result: canJudge && how === "sound" ? "judging" : "unsure",
@@ -344,15 +373,16 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     if (canJudge) capturePhotos(n, t);
     save(); render();
     if (canJudge && how === "sound") setTimeout(() => decide(n, t), JUDGE_DELAY);
+    return n;
   }
 
-  // Five pictures: at the shot, then through the next ~3/4 second while the clay breaks or flies on.
-  const SNAP_TIMES = [0, 150, 300, 500, 750];
+  // A short burst of nine pictures from the shot through the next ~3/4 second while the clay breaks or flies on.
+  const SNAP_TIMES = [0, 80, 160, 240, 320, 400, 500, 620, 750];
   const snap = document.createElement("canvas"), sctx = snap.getContext("2d");
   function capturePhotos(n, t0) {
     const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw) return;
-    const sw = Math.min(1280, vw), sh = Math.round(sw * vh / vw);
+    const sw = Math.min(960, vw), sh = Math.round(sw * vh / vw);
     const seen = vision.frames.filter(f => f.area > 0 && f.t >= t0 - 600 && f.t <= t0 + 40);
     const last = seen[seen.length - 1];
     const rec = { w: sw, h: sh, clay: last ? { x: last.cx / vision.W, y: last.cy / vision.H } : null, frames: [] };
@@ -377,7 +407,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
         const at = Math.round(performance.now() - t0);
         snap.width = sw; snap.height = sh;
         sctx.drawImage(video, 0, 0, sw, sh);
-        snap.toBlob(b => { if (b) rec.frames[i] = { dt: at, blob: b }; finish(); }, "image/jpeg", 0.82);
+        snap.toBlob(b => { if (b) rec.frames[i] = { dt: at, blob: b }; finish(); }, "image/jpeg", 0.78);
       }, Math.max(0, dt - (performance.now() - t0)));
     });
   }
@@ -386,6 +416,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     const s = shots[n];
     if (!s || s.t !== Math.round(t) || s.result !== "judging") return;
     const v = judge(vision.frames, t, vision.W, vision.H, vision.skyY);
+    s.cam = v.r;   // what the camera thought, kept even if you change the call
     if (settings.auto && v.r !== "unsure") { s.result = v.r; s.by = "camera"; s.why = v.why; }
     else { s.result = "unsure"; s.by = ""; s.why = v.r === "unsure" ? v.why : `Camera suggests ${v.r.toUpperCase()}: ${v.why}`; }
     save(); render();
@@ -574,7 +605,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     }
   }
 
-  let stream = null, wakeLock = null;
+  let stream = null, wakeLock = null, source = null, simTimer = null;
   async function start() {
     const st = $("status");
     st.hidden = false; st.className = "status"; st.textContent = "Asking for camera and microphone…";
@@ -595,7 +626,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       st.textContent = `Camera and microphone were blocked (${note || "no permission"}). Allow them in the browser's site settings, or score with + Add shot.`;
       renderStartBtn(); return;
     }
-    stream = got; running = true;
+    stream = got; running = true; source = "camera";
     const hasV = stream.getVideoTracks().length > 0, hasA = stream.getAudioTracks().length > 0;
     if (hasV) {
       video.srcObject = stream;
@@ -624,8 +655,10 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   }
 
   function stop() {
-    running = false; listening = false;
+    const wasSim = source === "sim";
+    running = false; listening = false; source = null;
     clearInterval(audioTimer); audioTimer = null;
+    clearInterval(simTimer); simTimer = null;
     if (actx) { actx.close().catch(() => {}); actx = null; }
     analyser = null;
     if (stream) stream.getTracks().forEach(tr => tr.stop());
@@ -635,20 +668,25 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     octx.clearRect(0, 0, overlay.width, overlay.height);
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     $("placeholder").hidden = false;
-    $("placeholder").querySelector("strong").textContent = "Camera stopped";
+    $("placeholder").querySelector("strong").textContent = wasSim ? "Simulation stopped" : "Camera stopped";
     $("meterFill").style.width = "0";
     $("clayPill").textContent = "Clay: not seen"; $("clayPill").className = "pill";
     $("pauseBtn").disabled = true;
     const st = $("status"); st.hidden = false; st.className = "status";
-    st.textContent = "Camera and microphone are off. The scoresheet and photos are kept. Tap Start to continue the round.";
+    st.textContent = mode === "test" ? "Stopped. The practice scoresheet is kept until you exit test mode."
+      : "Camera and microphone are off. The scoresheet and photos are kept. Tap Start to continue the round.";
     renderListen(); renderStartBtn();
   }
 
   function renderStartBtn() {
     const b = $("startBtn");
-    b.textContent = running ? "Stop camera & mic" : "Start camera & mic";
+    b.textContent = running ? (source === "sim" ? "Stop simulation" : "Stop camera & mic") : "Start camera & mic";
     b.classList.toggle("primary", !running);
     b.disabled = false;
+    b.hidden = source === "sim";   // the test bar has its own Stop simulation button
+    const sb = $("simBtn");
+    sb.textContent = running && source === "sim" ? "Stop simulation" : "Run simulated range";
+    sb.classList.toggle("primary", !(running && source === "sim"));
   }
 
   async function keepAwake() {
@@ -658,9 +696,9 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
 
   function renderListen() {
     const p = $("listenPill");
-    p.textContent = !analyser ? "Mic off" : listening ? "Listening for shots" : "Paused";
-    p.className = "pill" + (analyser && listening ? " on" : analyser ? " warn" : "");
-    $("pauseBtn").textContent = listening ? "Pause listening" : "Resume listening";
+    p.textContent = source === "sim" ? "Simulated shots" : !analyser ? "Mic off" : listening ? "Listening for shots" : "Paused";
+    p.className = "pill" + (source === "sim" || (analyser && listening) ? " on" : analyser ? " warn" : "");
+    $("pauseBtn").textContent = listening || !analyser ? "Pause listening" : "Resume listening";
   }
 
   // ---------- rendering ----------
@@ -669,7 +707,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
 
   function render() {
     const n = shots.length;
-    $("progress").textContent = `Shot ${n} of ${TOTAL}` + (n < TOTAL ? ` · Station rotation ${Math.min(5, Math.floor(n / 25) + 1)} of 5` : " · Round complete");
+    $("progress").textContent = (mode === "test" ? "Test · " : "") + `Shot ${n} of ${TOTAL}` + (n < TOTAL ? ` · Station rotation ${Math.min(5, Math.floor(n / 25) + 1)} of 5` : " · Round complete");
 
     // up next
     const up = $("upNext");
@@ -730,6 +768,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     const t = $("sheet"); t.innerHTML = html;
     t.querySelectorAll("[data-name]").forEach(el => el.textContent = nameOf(+el.dataset.name));
     const pending = shots.filter(x => x.result === "unsure").length;
+    if (mode === "test") renderTestStats();
     $("squadTotal").textContent = `Squad ${squadHits} / ${squadShot}` + (pending ? ` · ${pending} need${pending === 1 ? "s" : ""} your call` : "");
     $("undoBtn").disabled = n === 0;
     $("shotBtn").disabled = n >= TOTAL;
@@ -751,6 +790,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   function openViewer(n) {
     if (!shots[n]) return;
     const wasOpen = viewerN != null;
+    stopPlay();
     viewerN = n; viewerFrame = null; viewerRec = null; freeUrls();
     selected = n;
     $("viewer").hidden = false;
@@ -759,7 +799,23 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     loadViewer();
     if (!wasOpen) $("vClose").focus();
   }
+  let playTimer = null;
+  function stopPlay() { clearInterval(playTimer); playTimer = null; }
+  function togglePlay() {   // plays the burst at about half speed, looping, until paused
+    if (playTimer) { stopPlay(); renderViewer(); return; }
+    if (viewerUrls.length < 2) return;
+    let hold = 0;
+    if (viewerFrame >= viewerUrls.length - 1) viewerFrame = 0;
+    playTimer = setInterval(() => {
+      if (viewerN == null) { stopPlay(); return; }
+      if (viewerFrame >= viewerUrls.length - 1) { if (++hold < 4) return; hold = 0; viewerFrame = 0; }
+      else viewerFrame++;
+      renderViewer();
+    }, 170);
+    renderViewer();
+  }
   function closeViewer() {
+    stopPlay();
     if (viewerN == null) return;
     viewerN = null; viewerRec = null; freeUrls();
     $("viewer").hidden = true;
@@ -777,6 +833,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   }
   function stepFrame(d) {
     if (!viewerUrls.length) return;
+    stopPlay();
     viewerFrame = Math.max(0, Math.min(viewerUrls.length - 1, viewerFrame + d));
     renderViewer();
   }
@@ -787,7 +844,10 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     title.textContent = resultText[s.result] || "—"; title.className = "vTitle " + s.result;
     $("vSub").textContent = `Shot ${s.n + 1} · ${nameOf(sl.s)} · post ${sl.station}, target ${sl.target} of 5` +
       (s.by === "camera" ? " · camera call" : s.by === "coach" ? " · your call" : "");
-    $("vWhy").textContent = whyText(s);
+    $("vWhy").textContent = whyText(s) + (s.truth ? ` Simulation: this target was really a ${s.truth.toUpperCase()}` +
+      (s.sim === "chip" ? " (small chip)." : s.sim === "dust" ? " (dusted)." : ".") : "");
+    $("vPlay").disabled = viewerUrls.length < 2;
+    $("vPlay").innerHTML = playTimer ? "&#x275A;&#x275A; Pause" : "&#x25B6; Play";
     const img = $("vImg"), ring = $("vRing"), empty = $("vEmpty"), stamp = $("vStamp"), zoomBtn = $("vZoom");
     const rec = viewerRec;
     if (rec) {
@@ -886,16 +946,18 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     if (e.key === "Escape") closeViewer();
     else if (e.key === "ArrowLeft") stepFrame(-1);
     else if (e.key === "ArrowRight") stepFrame(1);
+    else if (e.key === " ") { e.preventDefault(); togglePlay(); }
   });
   $("vHit").addEventListener("click", () => viewerN != null && setResult(viewerN, "hit"));
   $("vMiss").addEventListener("click", () => viewerN != null && setResult(viewerN, "miss"));
   $("vUnk").addEventListener("click", () => viewerN != null && setResult(viewerN, "unsure"));
   $("vPrev").addEventListener("click", () => viewerN > 0 && openViewer(viewerN - 1));
   $("vNext").addEventListener("click", () => viewerN < shots.length - 1 && openViewer(viewerN + 1));
+  $("vPlay").addEventListener("click", togglePlay);
   $("vZoom").addEventListener("click", () => { settings.zoom = !settings.zoom; save(); renderViewer(); });
   $("vStrip").addEventListener("click", e => {
     const b = e.target.closest("button[data-f]"); if (!b) return;
-    viewerFrame = +b.dataset.f; renderViewer();
+    stopPlay(); viewerFrame = +b.dataset.f; renderViewer();
   });
   $("copyBtn").addEventListener("click", () => {
     const text = csv();
@@ -939,9 +1001,156 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   });
   $("confirmNo").addEventListener("click", () => $("confirmBox").hidden = true);
   $("confirmYes").addEventListener("click", () => {
+    if (mode === "test") {
+      shots = []; selected = null; closeViewer(); pendingPhotos.clear(); photos.clearTest();
+      render(); $("confirmBox").hidden = true; flash("Practice scoresheet cleared."); return;
+    }
     shots = []; selected = null; closeViewer();
     roundId = newRoundId(); store.set("tls.round", roundId); pendingPhotos.clear(); photos.clear();
     save(); render(); $("confirmBox").hidden = true; flash("New round started."); });
+
+  // ---------- test mode ----------
+  let liveShots = null, liveRoundId = null;
+  function enterTest() {
+    if (mode === "test") return;
+    if (running) stop();
+    liveShots = shots; liveRoundId = roundId;
+    mode = "test"; shots = []; roundId = "test"; selected = null;
+    closeViewer(); pendingPhotos.clear();
+    $("testBar").hidden = false; $("testBtn").hidden = true; $("status").hidden = true;
+    render(); renderStartBtn();
+    $("testBar").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  function exitTest() {
+    if (mode !== "test") return;
+    if (running) stop();
+    photos.clearTest(); pendingPhotos.clear(); closeViewer();
+    mode = "live"; shots = liveShots; roundId = liveRoundId; selected = shots.length ? shots.length - 1 : null;
+    $("testBar").hidden = true; $("testBtn").hidden = false; $("status").hidden = true;
+    render(); renderStartBtn(); flash("Back to your real round.");
+  }
+  function renderTestStats() {
+    const el = $("testStats");
+    const simmed = shots.filter(x => x.truth && x.cam);
+    if (!shots.length) {
+      el.innerHTML = "Tap <b>Run simulated range</b> to watch the app score generated clays, or <b>Start camera &amp; mic</b> to practice with your own camera (clap to make a shot).";
+      return;
+    }
+    if (!simmed.length) { el.textContent = `${shots.length} practice shot${shots.length === 1 ? "" : "s"} counted.`; return; }
+    const right = simmed.filter(x => x.cam === x.truth).length;
+    const wrong = simmed.filter(x => x.cam !== "unsure" && x.cam !== x.truth).length;
+    const asked = simmed.filter(x => x.cam === "unsure").length;
+    el.innerHTML = `Camera on ${simmed.length} simulated shots: <b class="ok">${right} right</b>, <b class="bad">${wrong} wrong</b>, <b class="q">${asked} left for you (?)</b>.`;
+  }
+
+  // Simulated range: draws a trap field with clays to a canvas and feeds it to the same camera code.
+  // Each clay's real outcome is known, so test mode can show how often the camera call is right.
+  function makeSim(g) {
+    const W = 1280, H = 720, GROUND = Math.round(H * 0.72);
+    const clouds = Array.from({ length: 5 }, () => ({ x: Math.random() * W, y: 40 + Math.random() * 220, r: 40 + Math.random() * 50, v: 4 + Math.random() * 8 }));
+    const OUTCOMES = [["break", 0.45], ["dust", 0.15], ["chip", 0.1], ["miss", 0.3]];
+    const pick = () => { let r = Math.random(); for (const [k, p] of OUTCOMES) if ((r -= p) < 0) return k; return "miss"; };
+    let clay = null, bits = [], puffs = [], next = performance.now() + 1200, lastT = performance.now();
+    function launch(t) {
+      clay = { t0: t, x: W / 2 + (Math.random() - .5) * 40, y: GROUND - 30, vx: (Math.random() * 2 - 1) * 230, vy: -(240 + Math.random() * 60),
+        r: 8, alive: true, outcome: pick(), shotAt: t + 450 + Math.random() * 300, shot: false, broke: false };
+    }
+    function breakClay(c) {
+      if (c.outcome === "break") {
+        c.alive = false;
+        const n = 3 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) bits.push({ x: c.x, y: c.y, vx: c.vx * .5 + (Math.random() * 2 - 1) * 150, vy: c.vy * .5 + (Math.random() * 2 - 1) * 150, r: Math.max(2, c.r * .55), life: .8 });
+        puffs.push({ x: c.x, y: c.y, age: 0, r: c.r });
+      } else if (c.outcome === "dust") {
+        c.alive = false; puffs.push({ x: c.x, y: c.y, age: 0, r: c.r * 1.8 });
+      } else if (c.outcome === "chip") {
+        bits.push({ x: c.x, y: c.y, vx: c.vx * .4 + (Math.random() < .5 ? -1 : 1) * 170, vy: c.vy * .4 - 60, r: Math.max(2, c.r * .45), life: .8 });
+        c.r *= .85;
+      }
+    }
+    function draw() {
+      const sky = g.createLinearGradient(0, 0, 0, GROUND);
+      sky.addColorStop(0, "#5d95d0"); sky.addColorStop(1, "#b9d5ec");
+      g.fillStyle = sky; g.fillRect(0, 0, W, GROUND);
+      g.fillStyle = "rgba(255,255,255,.85)";
+      for (const c of clouds) { g.beginPath(); g.ellipse(c.x, c.y, c.r * 1.8, c.r * .6, 0, 0, 7); g.fill(); }
+      g.fillStyle = "#2f4a2c";
+      g.beginPath(); g.moveTo(0, GROUND);
+      for (let x = 0; x <= W; x += 40) g.lineTo(x, GROUND - 14 - 10 * Math.sin(x * .05) - 6 * Math.sin(x * .13));
+      g.lineTo(W, GROUND); g.fill();
+      g.fillStyle = "#5f7f45"; g.fillRect(0, GROUND, W, H - GROUND);
+      g.fillStyle = "#8a8d86"; g.fillRect(W / 2 - 70, GROUND - 6, 140, 34);
+      g.fillStyle = "#6d706a"; g.fillRect(W / 2 - 76, GROUND - 10, 152, 8);
+      for (let i = 0; i < 5; i++) {   // shooters' backs at the bottom of the picture
+        const x = 200 + i * 220;
+        g.fillStyle = i === 2 ? "#e8682a" : "#22302a";   // one orange vest, below the sky line, should be ignored
+        g.fillRect(x - 26, H - 120, 52, 120);
+        g.fillStyle = "#22302a"; g.beginPath(); g.arc(x, H - 138, 20, 0, 7); g.fill();
+      }
+      for (const p of puffs) {
+        const k = p.age / .3;
+        g.fillStyle = `rgba(150,140,130,${.75 * (1 - k)})`;
+        g.beginPath(); g.arc(p.x, p.y, p.r * (1 + 3 * k), 0, 7); g.fill();
+      }
+      g.fillStyle = "#e8682a";
+      for (const b of bits) { g.beginPath(); g.arc(b.x, b.y, b.r, 0, 7); g.fill(); }
+      if (clay && clay.alive) { g.beginPath(); g.ellipse(clay.x, clay.y, clay.r, clay.r * .7, 0, 0, 7); g.fill(); }
+    }
+    function step(t) {
+      const dt = Math.min(.05, (t - lastT) / 1000); lastT = t;
+      for (const c of clouds) { c.x += c.v * dt; if (c.x > W + 120) c.x = -120; }
+      if (!clay && t >= next) launch(t);
+      if (clay) {
+        if (clay.alive) {
+          clay.vy += 140 * dt; clay.x += clay.vx * dt; clay.y += clay.vy * dt;
+          clay.r = Math.max(2.6, clay.r - 4.5 * dt);
+          if (clay.y > GROUND - 4 || clay.x < -20 || clay.x > W + 20) clay.alive = false;
+        }
+        if (!clay.shot && t >= clay.shotAt) { clay.shot = true; simShot(t, clay.outcome); }
+        if (clay.shot && !clay.broke && t >= clay.shotAt + 90) { clay.broke = true; if (clay.alive) breakClay(clay); }
+        if (t - clay.t0 > 2600) { clay = null; next = t + 400 + Math.random() * 500; }
+      }
+      for (const b of bits) { b.vy += 200 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt; }
+      bits = bits.filter(b => b.life > 0 && b.y < GROUND);
+      for (const p of puffs) p.age += dt;
+      puffs = puffs.filter(p => p.age < .3);
+      draw();
+    }
+    draw();
+    return { step };
+  }
+  function simShot(t, outcome) {
+    const n = addShot(t, "sound");
+    if (n < 0) return;
+    shots[n].truth = outcome === "miss" ? "miss" : "hit";
+    shots[n].sim = outcome;
+    render();
+  }
+  async function startSim() {
+    if (running) stop();
+    const c = document.createElement("canvas"); c.width = 1280; c.height = 720;
+    const st = $("status"); st.hidden = false;
+    if (!c.captureStream) {
+      st.className = "status err"; st.textContent = "This browser can't run the simulation. Try Chrome or a newer Safari.";
+      return;
+    }
+    const sim = makeSim(c.getContext("2d"));
+    stream = c.captureStream(30); source = "sim"; running = true;
+    simTimer = setInterval(() => sim.step(performance.now()), 33);
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    if (!video.videoWidth) await new Promise(r => { video.addEventListener("loadedmetadata", r, { once: true }); setTimeout(r, 2000); });
+    if (!running || source !== "sim") return;
+    setupVision();
+    $("placeholder").hidden = true;
+    frameLoop();
+    st.className = "status";
+    st.textContent = "Simulated range running: a clay about every 3 seconds. Tap any score to see its photos and the real result.";
+    keepAwake(); renderListen(); renderStartBtn();
+  }
+  $("testBtn").addEventListener("click", enterTest);
+  $("exitTestBtn").addEventListener("click", exitTest);
+  $("simBtn").addEventListener("click", () => running && source === "sim" ? stop() : startSim());
 
   renderSettings(); renderListen(); render();
   window.__tls = { judge, slot, get shots() { return shots; }, vision, photos, photoKey };   // for testing
