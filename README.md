@@ -6,15 +6,20 @@ A phone web page that scores a five-person trap squad live from a tripod behind 
   five times, then everyone rotates one post right and post 5 walks to post 1). 125 shots make a 25-target round.
 - **Calls hit or miss with the camera.** About a second after each shot it looks at what the orange clay did:
   broke into pieces, spread into fragments or vanished in mid-air (hit), or kept flying in one piece (miss).
-  Partial and full breaks both count as hits.
-- **Asks you when it isn't sure.** Unclear shots show **?** until you tap **Hit** or **Miss**. Tap any box on the
-  scoresheet to change it.
+  Partial and full breaks both count as hits. It also tracks the clay's flight path: a sudden turn or slow-down right
+  after the shot supports a hit. A clay that only changes course, with no broken piece seen, is marked **?** for you
+  to check, because a target needs a visible piece broken to score.
+- **Photographs every shot.** Five pictures from the moment of the shot to about 0.75 s after. Tap any score on the
+  scoresheet to open them: the viewer zooms in on where the clay was (dashed circle), and you can confirm or change
+  the call right there.
+- **Asks you when it isn't sure.** Unclear shots show **?** until you tap **Hit** or **Miss**. You can also mark any
+  shot unknown yourself with the **?** button. Unknown shots don't count toward the total until you decide.
 - **Scoresheet** uses the usual marks (`/` hit, `O` miss), grouped by post, with totals per shooter and for the squad.
 - **Copy scores** or **Download CSV** for a spreadsheet: a summary per shooter plus every shot with post, result and
   who made the call.
 
-Everything runs on the phone. Video and audio are never uploaded or recorded, and scores stay on the phone (in the
-browser's storage) until you copy or download them.
+Everything runs on the phone. Video and audio are never uploaded or recorded. The shot photos and the scores are
+saved only on that phone (in the browser's storage) and are deleted when you start a new round.
 
 ## Live page
 
@@ -43,10 +48,12 @@ During the round:
 
 | Situation | What to do |
 |---|---|
+| Not sure whether it was a hit | Tap the score to see the photos, or tap **?** to decide later |
+| Done shooting, or moving the phone | **Stop camera & mic** (the scoresheet and photos are kept; **Start** continues the round) |
 | A shot was not counted | **+ Add shot**, then tap Hit or Miss |
 | An extra shot was counted (neighboring field, dropped gear) | **Undo last shot** |
 | Break between rounds, walking, talking near the phone | **Pause listening** |
-| Camera called it wrong | Tap the box on the scoresheet, then **Hit** or **Miss** |
+| Camera called it wrong | Tap the box on the scoresheet, check the photos, then **Hit** or **Miss** |
 | No-bird / re-throw | Nothing: no shot is fired, so nothing is counted |
 
 **First few practices:** turn off *Accept camera calls automatically*. The camera then only suggests a call and you

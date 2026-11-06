@@ -80,10 +80,11 @@ h1 { font: 700 26px/1 var(--f-display); letter-spacing: .02em; margin: 0; text-t
 .callResult { font: 700 44px/1 var(--f-display); letter-spacing: .02em; text-transform: uppercase; }
 .call.hit .callResult { color: var(--hit); } .call.miss .callResult { color: var(--miss); } .call.unsure .callResult { color: var(--unsure); }
 .callWhy { font-size: 14px; color: var(--muted); min-height: 1.45em; }
-.callBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.callBtns { display: grid; grid-template-columns: 1fr 1fr .62fr; gap: 10px; }
 .callBtns button { min-height: 60px; font: 700 24px/1 var(--f-display); text-transform: uppercase; letter-spacing: .04em; }
 button.hitBtn.sel { background: var(--hit); border-color: var(--hit); color: #fff; }
 button.missBtn.sel { background: var(--miss); border-color: var(--miss); color: #fff; }
+button.unkBtn.sel { background: var(--unsure); border-color: var(--unsure); color: #fff; }
 
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .row button { flex: 1 1 auto; }
@@ -129,6 +130,34 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
 .confirm button.danger { background: var(--miss); border-color: var(--miss); color: #fff; }
 .status { font-size: 14px; color: var(--muted); margin: 0; }
 .status.err { color: var(--miss); }
+.thumbBtn { display: flex; align-items: center; gap: 12px; padding: 6px 12px 6px 6px; min-height: 0; text-align: left; font-size: 15px; width: 100%; }
+.thumbBtn img { width: 104px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: var(--video-bg); flex: none; }
+.thumbBtn .ph { width: 104px; aspect-ratio: 16 / 9; border-radius: 6px; background: var(--video-bg); flex: none; }
+
+/* photo viewer: opens when a score is tapped */
+.viewer { position: fixed; inset: 0; z-index: 50; background: rgba(6, 10, 8, .74); display: flex; overflow-y: auto;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
+.vCard { margin: auto; width: min(100%, 760px, max(330px, calc((100dvh - 330px) * 1.78))); background: var(--surface); color: var(--ink);
+  border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+.vHead { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.vTitle { font: 700 30px/1 var(--f-display); text-transform: uppercase; letter-spacing: .02em; }
+.vTitle.hit { color: var(--hit); } .vTitle.miss { color: var(--miss); } .vTitle.unsure, .vTitle.judging { color: var(--unsure); }
+.vSub { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.vClose { min-width: 46px; font-size: 22px; padding: 8px; }
+.vPhoto { position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--video-bg); border-radius: 10px; overflow: hidden; }
+.vPhoto img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; transition: transform .2s ease; }
+.vRing { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border: 2px dashed #00e5ff; border-radius: 50%; pointer-events: none; }
+.vStamp { position: absolute; left: 8px; top: 8px; font: 600 12px/1 var(--f-body); color: #fff; background: rgba(0,0,0,.6); padding: 5px 8px; border-radius: 99px; }
+.vEmpty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; margin: 0; color: #cfd9d2; font-size: 15px; }
+.vStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.vStrip button { padding: 0; min-height: 0; border-radius: 6px; overflow: hidden; display: grid; border-width: 2px; }
+.vStrip button.sel { border-color: var(--clay); }
+.vStrip img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--video-bg); }
+.vStrip span { font: 600 11px/1 var(--f-body); color: var(--muted); padding: 4px 2px; text-align: center; font-variant-numeric: tabular-nums; }
+.vTools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.vWhy { color: var(--muted); font-size: 14px; flex: 1 1 200px; min-width: 0; }
+.vNav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -166,9 +195,11 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
         <div class="callHead"><span id="callWho">No shots yet</span><span id="callBy"></span></div>
         <div class="callResult" id="callResult">Waiting</div>
         <div class="callWhy" id="callWhy">Each gunshot moves the scoresheet to the next shooter.</div>
+        <button class="thumbBtn" id="thumbBtn" hidden><img id="thumbImg" alt="" hidden><span class="ph" id="thumbPh"></span><span id="thumbLabel">Photos</span></button>
         <div class="callBtns">
           <button id="hitBtn" class="hitBtn" disabled>Hit</button>
           <button id="missBtn" class="missBtn" disabled>Miss</button>
+          <button id="unkBtn" class="unkBtn" disabled aria-label="Not sure: mark unknown">?</button>
         </div>
       </div>
       <div class="row">
@@ -220,6 +251,25 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   </details>
 </div>
 
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="vTitle">
+  <div class="vCard">
+    <div class="vHead">
+      <div><div class="vTitle" id="vTitle"></div><div class="vSub" id="vSub"></div></div>
+      <button class="vClose" id="vClose" aria-label="Close photos">&#x2715;</button>
+    </div>
+    <div class="vPhoto" id="vPhoto">
+      <img id="vImg" alt="Camera photo after the shot">
+      <div class="vRing" id="vRing" hidden></div>
+      <span class="vStamp" id="vStamp" hidden></span>
+      <p class="vEmpty" id="vEmpty" hidden></p>
+    </div>
+    <div class="vStrip" id="vStrip"></div>
+    <div class="vTools"><button id="vZoom">Show full picture</button><span class="vWhy" id="vWhy"></span></div>
+    <div class="callBtns"><button id="vHit" class="hitBtn">Hit</button><button id="vMiss" class="missBtn">Miss</button><button id="vUnk" class="unkBtn" aria-label="Not sure: mark unknown">?</button></div>
+    <div class="vNav"><button id="vPrev">&#x2039; Previous shot</button><button id="vNext">Next shot &#x203A;</button></div>
+  </div>
+</div>
+
 <script>
 (() => {
   "use strict";
@@ -233,12 +283,48 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
-  const defaults = { names: ["Shooter 1", "Shooter 2", "Shooter 3", "Shooter 4", "Shooter 5"], sens: 6, sky: 65, auto: true, showMask: true };
+  const defaults = { names: ["Shooter 1", "Shooter 2", "Shooter 3", "Shooter 4", "Shooter 5"], sens: 6, sky: 65, auto: true, showMask: true, zoom: true };
   const settings = Object.assign({}, defaults, store.get("tls.settings") || {});
   let shots = store.get("tls.shots") || [];
   shots.forEach(s => { if (s.result === "judging") { s.result = "unsure"; s.why = "Page was reloaded before the call was made."; } });
   let selected = shots.length ? shots.length - 1 : null;
   const save = () => { store.set("tls.settings", settings); store.set("tls.shots", shots); };
+  const newRoundId = () => Date.now().toString(36);
+  let roundId = store.get("tls.round") || newRoundId();
+  store.set("tls.round", roundId);
+
+  // ---------- photos: kept on this phone in IndexedDB (too big for localStorage) ----------
+  const photos = (() => {
+    const mem = new Map();   // fallback if IndexedDB is unavailable (private window): photos last until reload
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise(res => {
+      try {
+        const r = indexedDB.open("tls-photos", 1);
+        r.onupgradeneeded = () => r.result.createObjectStore("shots");
+        r.onsuccess = () => res(r.result);
+        r.onerror = r.onblocked = () => res(null);
+      } catch (e) { res(null); }
+    }));
+    const run = async (mode, fn) => {
+      const db = await open(); if (!db) return { ok: false };
+      return new Promise(res => {
+        try {
+          const t = db.transaction("shots", mode), req = fn(t.objectStore("shots"));
+          t.oncomplete = () => res({ ok: true, value: req && req.result });
+          t.onerror = t.onabort = () => res({ ok: false });
+        } catch (e) { res({ ok: false }); }
+      });
+    };
+    return {
+      async put(k, v) { const r = await run("readwrite", s => s.put(v, k)); if (r.ok) mem.delete(k); else mem.set(k, v); },
+      async get(k) { if (mem.has(k)) return mem.get(k); const r = await run("readonly", s => s.get(k)); return r.ok ? r.value || null : null; },
+      async del(k) { mem.delete(k); await run("readwrite", s => s.delete(k)); },
+      async clear() { mem.clear(); await run("readwrite", s => s.clear()); }
+    };
+  })();
+  const photoKey = n => `${roundId}:${n}`;
+  const pendingPhotos = new Set();
+  if (!shots.length) photos.clear();
 
   // ---------- round bookkeeping ----------
   // Firing order never changes: post 1, 2, 3, 4, 5, five times, then everyone moves one post right (post 5 walks to post 1).
@@ -255,8 +341,45 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     shots.push({ n, t: Math.round(t), result: canJudge && how === "sound" ? "judging" : "unsure",
       by: "", why: canJudge && how === "sound" ? "" : "Added by hand. Tap Hit or Miss." });
     selected = n;
+    if (canJudge) capturePhotos(n, t);
     save(); render();
     if (canJudge && how === "sound") setTimeout(() => decide(n, t), JUDGE_DELAY);
+  }
+
+  // Five pictures: at the shot, then through the next ~3/4 second while the clay breaks or flies on.
+  const SNAP_TIMES = [0, 150, 300, 500, 750];
+  const snap = document.createElement("canvas"), sctx = snap.getContext("2d");
+  function capturePhotos(n, t0) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw) return;
+    const sw = Math.min(1280, vw), sh = Math.round(sw * vh / vw);
+    const seen = vision.frames.filter(f => f.area > 0 && f.t >= t0 - 600 && f.t <= t0 + 40);
+    const last = seen[seen.length - 1];
+    const rec = { w: sw, h: sh, clay: last ? { x: last.cx / vision.W, y: last.cy / vision.H } : null, frames: [] };
+    const key = photoKey(n), stamp = Math.round(t0);
+    let left = SNAP_TIMES.length;
+    pendingPhotos.add(n);
+    const finish = () => {
+      if (--left) return;
+      rec.frames = rec.frames.filter(Boolean);
+      const s = shots[n];
+      if (!s || s.t !== stamp || photoKey(n) !== key) { pendingPhotos.delete(n); return; }   // undone or new round meanwhile
+      photos.put(key, rec).then(() => {
+        pendingPhotos.delete(n);
+        if (shots[n] && shots[n].t === stamp) { shots[n].photo = rec.frames.length > 0; save(); }
+        render();
+        if (viewerN === n) loadViewer();
+      });
+    };
+    SNAP_TIMES.forEach((dt, i) => {
+      setTimeout(() => {
+        if (!running || !video.videoWidth) { finish(); return; }
+        const at = Math.round(performance.now() - t0);
+        snap.width = sw; snap.height = sh;
+        sctx.drawImage(video, 0, 0, sw, sh);
+        snap.toBlob(b => { if (b) rec.frames[i] = { dt: at, blob: b }; finish(); }, "image/jpeg", 0.82);
+      }, Math.max(0, dt - (performance.now() - t0)));
+    });
   }
 
   function decide(n, t) {
@@ -303,14 +426,45 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       const gone = early.filter(f => f.area === 0).length;
       if (early.length >= 4 && gone / early.length >= 0.7) { hit += 1.5; hitWhy.push("clay vanished in mid-air"); }
     }
+    // Trajectory: compare the clay's velocity just before the shot with just after.
+    // A sharp turn or sudden slow-down means the shot reached it; an unchanged path supports a miss.
+    const fitV = fs => {
+      const n = fs.length; if (n < 3) return null;
+      let mt = 0, mx = 0, my = 0;
+      for (const f of fs) { mt += f.t / 1000; mx += f.bcx; my += f.bcy; }
+      mt /= n; mx /= n; my /= n;
+      let vt = 0, cx = 0, cy = 0;
+      for (const f of fs) { const dt = f.t / 1000 - mt; vt += dt * dt; cx += dt * (f.bcx - mx); cy += dt * (f.bcy - my); }
+      return vt > 0 ? { vx: cx / vt, vy: cy / vt } : null;
+    };
+    let trajChanged = false;
+    const before = fitV(pre.filter(f => f.bsize > 0 && f.t >= T - 350));
+    const after = fitV(post.filter(f => f.bsize > 0 && f.t >= T + 80 && f.t <= T + 450));
+    if (before && after) {
+      const sa = Math.hypot(before.vx, before.vy), sb = Math.hypot(after.vx, after.vy);
+      if (sa >= 20) {   // pixels per second: clay must be moving enough to judge its path
+        const cos = (before.vx * after.vx + before.vy * after.vy) / (sa * Math.max(sb, 1e-6));
+        const turn = sb < 1e-6 ? 180 : Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+        const ratio = sb / sa;
+        if (turn >= 25) { trajChanged = true; hitWhy.push(`flight path turned ${Math.round(turn)}°`); }
+        else if (ratio < 0.5) { trajChanged = true; hitWhy.push("clay suddenly slowed"); }
+        else if (ratio > 2) { trajChanged = true; hitWhy.push("clay suddenly sped up"); }
+        if (trajChanged) hit += 1;   // supports a hit; on its own it only flags the shot for you to check
+      }
+    }
+
     const later = post.filter(f => f.t >= T + 100);
     const visible = later.filter(f => f.area > 0).length;
     const intact = later.filter(f => f.area > 0 && f.blobs <= preBlobs && f.area <= 3 * preArea + 6).length;
-    if (ref.length && intact >= 6 && intact / Math.max(visible, 1) >= 0.75) { miss += 2.5; missWhy.push("clay kept flying in one piece"); }
+    if (!trajChanged && ref.length && intact >= 6 && intact / Math.max(visible, 1) >= 0.75) {
+      miss += 2.5; missWhy.push(before && after ? "clay kept flying in one piece on the same path" : "clay kept flying in one piece");
+    }
 
     const d = hit - miss, cap = a => a.join(", ").replace(/^./, c => c.toUpperCase()) + ".";
     if (d >= 1.5) return { r: "hit", why: cap(hitWhy) };
     if (d <= -1.5) return { r: "miss", why: cap(missWhy) };
+    if (trajChanged && hitWhy.length === 1 && !missWhy.length)
+      return { r: "unsure", why: `Clay changed course (${hitWhy[0]}) but no broken piece was seen. Check the photos: a target needs a visible piece broken to score.` };
     if (hitWhy.length || missWhy.length) return { r: "unsure", why: `Mixed signals (${hitWhy.concat(missWhy).join(", ")}). Tap Hit or Miss.` };
     return { r: "unsure", why: "Clay seen but no clear break or clean flight. Tap Hit or Miss." };
   }
@@ -349,7 +503,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       const m = on && a < 0.5 ? 1 : 0;
       mask[p] = m; area += m;
     }
-    const f = { t: performance.now(), area, blobs: 0, minx: W, maxx: -1, miny: H, maxy: -1, cx: 0, cy: 0 };
+    const f = { t: performance.now(), area, blobs: 0, minx: W, maxx: -1, miny: H, maxy: -1, cx: 0, cy: 0, bcx: 0, bcy: 0, bsize: 0 };
     const boxes = [];
     if (area > 0 && area < n * 0.03) {
       label.fill(0, 0, n);
@@ -358,10 +512,10 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
         if (!mask[p] || label[p]) continue;
         f.blobs++;
         let top = 0; stack[top++] = p; label[p] = f.blobs;
-        let bx0 = W, bx1 = -1, by0 = H, by1 = -1;
+        let bx0 = W, bx1 = -1, by0 = H, by1 = -1, bsx = 0, bsy = 0, bn = 0;
         while (top) {
           const q = stack[--top], x = q % W, y = (q - x) / W;
-          sx += x; sy += y;
+          sx += x; sy += y; bsx += x; bsy += y; bn++;
           if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
           for (let dy = -1; dy <= 1; dy++) {
             const yy = y + dy; if (yy < 0 || yy >= yMax) continue;
@@ -373,6 +527,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
           }
         }
         boxes.push([bx0, by0, bx1, by1]);
+        if (bn > f.bsize) { f.bsize = bn; f.bcx = bsx / bn; f.bcy = bsy / bn; }   // biggest piece: the clay we track
         if (bx0 < f.minx) f.minx = bx0; if (bx1 > f.maxx) f.maxx = bx1;
         if (by0 < f.miny) f.miny = by0; if (by1 > f.maxy) f.maxy = by1;
       }
@@ -423,10 +578,11 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   async function start() {
     const st = $("status");
     st.hidden = false; st.className = "status"; st.textContent = "Asking for camera and microphone…";
+    $("startBtn").disabled = true;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       st.className = "status err";
       st.textContent = "This browser can't open the camera here. Open the page from an https:// address in Safari or Chrome. You can still score with + Add shot.";
-      return;
+      renderStartBtn(); return;
     }
     const vc = { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } };
     const ac = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
@@ -437,7 +593,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     if (!got) {
       st.className = "status err";
       st.textContent = `Camera and microphone were blocked (${note || "no permission"}). Allow them in the browser's site settings, or score with + Add shot.`;
-      return;
+      renderStartBtn(); return;
     }
     stream = got; running = true;
     const hasV = stream.getVideoTracks().length > 0, hasA = stream.getAudioTracks().length > 0;
@@ -458,13 +614,41 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       audioTimer = setInterval(audioTick, 15);
       listening = true;
     }
-    st.textContent = hasV && hasA ? "Camera and microphone on. Shots are counted by sound and called by camera."
-      : hasA ? "Microphone only: shots are counted, but you'll tap Hit or Miss for each one."
+    st.textContent = hasV && hasA ? "Camera and microphone on. Shots are counted by sound, called by camera, and photographed."
+      : hasA ? "Microphone only: shots are counted, but you'll tap Hit or Miss for each one. No photos without the camera."
       : "Camera only: no microphone, so use + Add shot after each shot.";
-    $("startBtn").textContent = "Running"; $("startBtn").disabled = true;
     $("pauseBtn").disabled = !hasA;
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
     keepAwake();
-    renderListen();
+    renderListen(); renderStartBtn();
+  }
+
+  function stop() {
+    running = false; listening = false;
+    clearInterval(audioTimer); audioTimer = null;
+    if (actx) { actx.close().catch(() => {}); actx = null; }
+    analyser = null;
+    if (stream) stream.getTracks().forEach(tr => tr.stop());
+    stream = null;
+    video.srcObject = null;
+    vision.ready = false; vision.frames = [];
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    $("placeholder").hidden = false;
+    $("placeholder").querySelector("strong").textContent = "Camera stopped";
+    $("meterFill").style.width = "0";
+    $("clayPill").textContent = "Clay: not seen"; $("clayPill").className = "pill";
+    $("pauseBtn").disabled = true;
+    const st = $("status"); st.hidden = false; st.className = "status";
+    st.textContent = "Camera and microphone are off. The scoresheet and photos are kept. Tap Start to continue the round.";
+    renderListen(); renderStartBtn();
+  }
+
+  function renderStartBtn() {
+    const b = $("startBtn");
+    b.textContent = running ? "Stop camera & mic" : "Start camera & mic";
+    b.classList.toggle("primary", !running);
+    b.disabled = false;
   }
 
   async function keepAwake() {
@@ -505,8 +689,8 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     if (!s) {
       cp.className = "call"; $("callWho").textContent = "No shots yet"; $("callBy").textContent = "";
       $("callResult").textContent = "Waiting"; $("callWhy").textContent = "Each gunshot moves the scoresheet to the next shooter.";
-      $("hitBtn").disabled = $("missBtn").disabled = true;
-      $("hitBtn").classList.remove("sel"); $("missBtn").classList.remove("sel");
+      $("hitBtn").disabled = $("missBtn").disabled = $("unkBtn").disabled = true;
+      ["hitBtn", "missBtn", "unkBtn"].forEach(id => $(id).classList.remove("sel"));
     } else {
       const sl = slot(s.n);
       cp.className = "call " + s.result;
@@ -514,10 +698,11 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
       $("callWho").querySelector("b").textContent = nameOf(sl.s);
       $("callBy").textContent = s.by === "camera" ? "Camera call" : s.by === "coach" ? "Coach call" : "";
       $("callResult").textContent = resultText[s.result] || "—";
-      $("callWhy").textContent = s.by === "coach" ? "Set by you." : (s.why || "");
-      $("hitBtn").disabled = $("missBtn").disabled = false;
+      $("callWhy").textContent = whyText(s);
+      $("hitBtn").disabled = $("missBtn").disabled = $("unkBtn").disabled = false;
       $("hitBtn").classList.toggle("sel", s.result === "hit");
       $("missBtn").classList.toggle("sel", s.result === "miss");
+      $("unkBtn").classList.toggle("sel", s.result === "unsure");
     }
 
     // scoresheet
@@ -548,6 +733,112 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     $("squadTotal").textContent = `Squad ${squadHits} / ${squadShot}` + (pending ? ` · ${pending} need${pending === 1 ? "s" : ""} your call` : "");
     $("undoBtn").disabled = n === 0;
     $("shotBtn").disabled = n >= TOTAL;
+    updateThumb();
+    if (viewerN != null) renderViewer();
+  }
+  const whyText = s => s.by === "coach" ? (s.result === "unsure" ? "You marked this unknown. It doesn't count until you tap Hit or Miss." : "Set by you.") : (s.why || "");
+
+  // ---------- photo viewer ----------
+  let viewerN = null, viewerFrame = null, viewerRec = null, viewerUrls = [];
+  const defaultFrame = rec => {   // the frame nearest 0.3 s after the shot: usually the clearest break
+    let best = 0;
+    rec.frames.forEach((f, i) => { if (Math.abs(f.dt - 300) < Math.abs(rec.frames[best].dt - 300)) best = i; });
+    return best;
+  };
+  const freeUrls = () => { viewerUrls.forEach(u => URL.revokeObjectURL(u)); viewerUrls = []; };
+  const fmtDt = dt => dt < 40 ? "At shot" : `+${(dt / 1000).toFixed(2)} s`;
+
+  function openViewer(n) {
+    if (!shots[n]) return;
+    const wasOpen = viewerN != null;
+    viewerN = n; viewerFrame = null; viewerRec = null; freeUrls();
+    selected = n;
+    $("viewer").hidden = false;
+    document.body.style.overflow = "hidden";
+    render();
+    loadViewer();
+    if (!wasOpen) $("vClose").focus();
+  }
+  function closeViewer() {
+    if (viewerN == null) return;
+    viewerN = null; viewerRec = null; freeUrls();
+    $("viewer").hidden = true;
+    document.body.style.overflow = "";
+  }
+  async function loadViewer() {
+    const n = viewerN, s = shots[n]; if (!s) return;
+    const rec = await photos.get(photoKey(n));
+    if (viewerN !== n) return;
+    freeUrls();
+    viewerRec = rec && rec.frames && rec.frames.length ? rec : null;
+    viewerUrls = viewerRec ? viewerRec.frames.map(f => URL.createObjectURL(f.blob)) : [];
+    if (viewerFrame == null || viewerFrame >= viewerUrls.length) viewerFrame = viewerRec ? defaultFrame(viewerRec) : 0;
+    renderViewer();
+  }
+  function stepFrame(d) {
+    if (!viewerUrls.length) return;
+    viewerFrame = Math.max(0, Math.min(viewerUrls.length - 1, viewerFrame + d));
+    renderViewer();
+  }
+  function renderViewer() {
+    const s = shots[viewerN]; if (!s) { closeViewer(); return; }
+    const sl = slot(s.n);
+    const title = $("vTitle");
+    title.textContent = resultText[s.result] || "—"; title.className = "vTitle " + s.result;
+    $("vSub").textContent = `Shot ${s.n + 1} · ${nameOf(sl.s)} · post ${sl.station}, target ${sl.target} of 5` +
+      (s.by === "camera" ? " · camera call" : s.by === "coach" ? " · your call" : "");
+    $("vWhy").textContent = whyText(s);
+    const img = $("vImg"), ring = $("vRing"), empty = $("vEmpty"), stamp = $("vStamp"), zoomBtn = $("vZoom");
+    const rec = viewerRec;
+    if (rec) {
+      $("vPhoto").style.aspectRatio = `${rec.w} / ${rec.h}`;
+      img.src = viewerUrls[viewerFrame]; img.hidden = false; empty.hidden = true;
+      stamp.hidden = false; stamp.textContent = fmtDt(rec.frames[viewerFrame].dt);
+      const c = rec.clay, zoom = settings.zoom && c;
+      if (c) {
+        img.style.transformOrigin = `${c.x * 100}% ${c.y * 100}%`;
+        ring.style.left = `${c.x * 100}%`; ring.style.top = `${c.y * 100}%`; ring.hidden = false;
+      } else ring.hidden = true;
+      img.style.transform = zoom ? "scale(3)" : "none";
+      zoomBtn.disabled = !c;
+      zoomBtn.textContent = !c ? "Clay not found in picture" : settings.zoom ? "Show full picture" : "Zoom on the clay";
+      $("vStrip").innerHTML = rec.frames.map((f, i) =>
+        `<button data-f="${i}" class="${i === viewerFrame ? "sel" : ""}" aria-label="Photo ${fmtDt(f.dt)}"><img src="${viewerUrls[i]}" alt=""><span>${fmtDt(f.dt)}</span></button>`).join("");
+    } else {
+      img.hidden = true; img.removeAttribute("src"); ring.hidden = true; stamp.hidden = true;
+      empty.hidden = false;
+      empty.textContent = pendingPhotos.has(s.n) ? "Taking photos…" : "No photos for this shot. The camera wasn't on when it was counted.";
+      zoomBtn.disabled = true; zoomBtn.textContent = "Zoom on the clay";
+      $("vStrip").innerHTML = "";
+    }
+    $("vHit").classList.toggle("sel", s.result === "hit");
+    $("vMiss").classList.toggle("sel", s.result === "miss");
+    $("vUnk").classList.toggle("sel", s.result === "unsure");
+    $("vPrev").disabled = viewerN <= 0;
+    $("vNext").disabled = viewerN >= shots.length - 1;
+  }
+
+  // small preview in the call panel for the selected shot
+  let thumbKey = null, thumbUrl = null;
+  async function updateThumb() {
+    const n = selected, s = n != null ? shots[n] : null, btn = $("thumbBtn");
+    if (!s) { btn.hidden = true; thumbKey = null; return; }
+    btn.hidden = false;
+    const pend = pendingPhotos.has(n), key = `${photoKey(n)}:${s.t}:${pend}`;
+    if (key === thumbKey) return;
+    thumbKey = key;
+    const rec = pend ? null : await photos.get(photoKey(n));
+    if (thumbKey !== key) return;
+    if (thumbUrl) { URL.revokeObjectURL(thumbUrl); thumbUrl = null; }
+    const img = $("thumbImg"), ph = $("thumbPh"), label = $("thumbLabel");
+    if (rec && rec.frames && rec.frames.length) {
+      thumbUrl = URL.createObjectURL(rec.frames[defaultFrame(rec)].blob);
+      img.src = thumbUrl; img.hidden = false; ph.hidden = true;
+      label.textContent = "See photos to confirm";
+    } else {
+      img.hidden = true; ph.hidden = false;
+      label.textContent = pend ? "Taking photos…" : "No photos for this shot";
+    }
   }
 
   // ---------- export ----------
@@ -561,7 +852,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     rows.push(["Shot", "Shooter", "Name", "Post", "Target at post", "Result", "Called by", "Notes"]);
     for (const x of shots) {
       const sl = slot(x.n);
-      rows.push([x.n + 1, sl.s + 1, nameOf(sl.s), sl.station, sl.target, x.result === "unsure" ? "needs call" : x.result, x.by || "", x.why || ""]);
+      rows.push([x.n + 1, sl.s + 1, nameOf(sl.s), sl.station, sl.target, x.result === "unsure" ? "unknown" : x.result, x.by || "", x.why || ""]);
     }
     return rows.map(r => r.map(v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(",")).join("\n");
   }
@@ -569,20 +860,42 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   function flash(msg) { const t = $("toast"); t.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.textContent = "", 3500); }
 
   // ---------- wiring ----------
-  $("startBtn").addEventListener("click", start);
+  $("startBtn").addEventListener("click", () => running ? stop() : start());
   $("shotBtn").addEventListener("click", () => addShot(performance.now(), "hand"));
   $("undoBtn").addEventListener("click", () => {
     if (!shots.length) return;
     const gone = shots.pop(); selected = shots.length ? shots.length - 1 : null;
+    photos.del(photoKey(gone.n)); pendingPhotos.delete(gone.n);
+    if (viewerN === gone.n) closeViewer();
     save(); render(); flash(`Removed shot ${gone.n + 1}.`);
   });
   $("pauseBtn").addEventListener("click", () => { listening = !listening; renderListen(); });
   $("hitBtn").addEventListener("click", () => selected != null && setResult(selected, "hit"));
   $("missBtn").addEventListener("click", () => selected != null && setResult(selected, "miss"));
+  $("unkBtn").addEventListener("click", () => selected != null && setResult(selected, "unsure"));
   $("sheet").addEventListener("click", e => {
     const b = e.target.closest("button[data-n]"); if (!b || b.disabled) return;
     selected = +b.dataset.n; render();
-    $("callPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    openViewer(selected);
+  });
+  $("thumbBtn").addEventListener("click", () => selected != null && openViewer(selected));
+  $("vClose").addEventListener("click", closeViewer);
+  $("viewer").addEventListener("click", e => { if (e.target === $("viewer")) closeViewer(); });
+  document.addEventListener("keydown", e => {
+    if (viewerN == null) return;
+    if (e.key === "Escape") closeViewer();
+    else if (e.key === "ArrowLeft") stepFrame(-1);
+    else if (e.key === "ArrowRight") stepFrame(1);
+  });
+  $("vHit").addEventListener("click", () => viewerN != null && setResult(viewerN, "hit"));
+  $("vMiss").addEventListener("click", () => viewerN != null && setResult(viewerN, "miss"));
+  $("vUnk").addEventListener("click", () => viewerN != null && setResult(viewerN, "unsure"));
+  $("vPrev").addEventListener("click", () => viewerN > 0 && openViewer(viewerN - 1));
+  $("vNext").addEventListener("click", () => viewerN < shots.length - 1 && openViewer(viewerN + 1));
+  $("vZoom").addEventListener("click", () => { settings.zoom = !settings.zoom; save(); renderViewer(); });
+  $("vStrip").addEventListener("click", e => {
+    const b = e.target.closest("button[data-f]"); if (!b) return;
+    viewerFrame = +b.dataset.f; renderViewer();
   });
   $("copyBtn").addEventListener("click", () => {
     const text = csv();
@@ -620,15 +933,18 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   auto.addEventListener("change", () => { settings.auto = auto.checked; save(); });
   showMask.addEventListener("change", () => { settings.showMask = showMask.checked; save(); if (!showMask.checked) octx.clearRect(0, 0, overlay.width, overlay.height); });
   $("newBtn").addEventListener("click", () => {
-    $("confirmText").textContent = shots.length ? `Clear all ${shots.length} shots from the scoresheet? Names and settings stay.` : "The scoresheet is already empty.";
+    $("confirmText").textContent = shots.length ? `Clear all ${shots.length} shots and their photos? Names and settings stay.` : "The scoresheet is already empty.";
     $("confirmYes").hidden = !shots.length;
     $("confirmBox").hidden = false;
   });
   $("confirmNo").addEventListener("click", () => $("confirmBox").hidden = true);
-  $("confirmYes").addEventListener("click", () => { shots = []; selected = null; save(); render(); $("confirmBox").hidden = true; flash("New round started."); });
+  $("confirmYes").addEventListener("click", () => {
+    shots = []; selected = null; closeViewer();
+    roundId = newRoundId(); store.set("tls.round", roundId); pendingPhotos.clear(); photos.clear();
+    save(); render(); $("confirmBox").hidden = true; flash("New round started."); });
 
   renderSettings(); renderListen(); render();
-  window.__tls = { judge, slot, get shots() { return shots; }, vision };   // for testing
+  window.__tls = { judge, slot, get shots() { return shots; }, vision, photos, photoKey };   // for testing
 })();
 </script>
 
