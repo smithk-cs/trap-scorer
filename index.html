@@ -103,7 +103,9 @@ tr.active td.name { color: var(--clay); }
 .grp { display: inline-grid; grid-template-columns: repeat(5, 1fr); gap: 2px; position: relative; padding-top: 12px; }
 .grp i { position: absolute; top: 0; left: 0; font: 600 10px/1 var(--f-body); font-style: normal; color: var(--muted); letter-spacing: .04em; }
 .box { width: 24px; height: 28px; padding: 0; min-height: 0; border-radius: 4px; border: 1.5px solid var(--line); background: transparent;
-  font: 700 17px/1 var(--f-display); display: grid; place-items: center; }
+  font: 700 17px/1 var(--f-display); display: grid; place-items: center; position: relative; }
+.box[data-dir]::after { position: absolute; right: 1px; bottom: 0; font: 600 9px/1 var(--f-body); color: var(--muted); }
+.box[data-dir="L"]::after { content: "\2190"; } .box[data-dir="C"]::after { content: "\2191"; } .box[data-dir="R"]::after { content: "\2192"; }
 .box.hit { color: var(--hit); border-color: var(--hit); }
 .box.miss { color: var(--miss); border-color: var(--miss); }
 .box.unsure, .box.judging { color: var(--unsure); border-color: var(--unsure); background: var(--unsure-bg); }
@@ -165,6 +167,25 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
 .testHead span { color: var(--ink); font-size: 14px; }
 .testStats { margin: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
 .testStats b.ok { color: var(--hit); } .testStats b.bad { color: var(--miss); } .testStats b.q { color: var(--unsure); }
+
+.vDir { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vDir > span { font-weight: 600; font-size: 15px; }
+.dirBtns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 1 1 220px; }
+.dirBtns button { min-height: 42px; font-size: 15px; white-space: nowrap; padding: 8px 6px; }
+.dirBtns button.sel { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.vDir small { color: var(--muted); font-size: 13px; flex-basis: 100%; }
+.missTbl td { vertical-align: top; }
+.missTbl td.num { font: 700 22px/1 var(--f-display); white-space: nowrap; }
+.missTbl td.num small, .mcell small { display: block; font: 400 12px/1.3 var(--f-body); color: var(--muted); margin-top: 3px; }
+.missTbl { table-layout: fixed; }
+.missTbl th:first-child { width: 26%; } .missTbl th:nth-child(2) { width: 15%; }
+.mcell { min-width: 0; }
+.mcell .pct { font: 700 21px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.mcell .bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 5px; overflow: hidden; }
+.mcell .bar i { display: block; height: 100%; background: var(--miss); }
+.mcell.top .pct { color: var(--miss); }
+.mcell.none .pct { color: var(--muted); }
+tr.squadRow td { border-top: 2px solid var(--line); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -240,6 +261,12 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     </div>
   </section>
 
+  <section class="sheet">
+    <div class="sheetHead"><h2>Misses by direction</h2><span class="squad" id="missNote"></span></div>
+    <p class="legend">Which way each missed target was flying, seen from behind the line: left, center (straightaway) or right of the trap house. The big number is the share of that shooter's misses; the line below is how many targets thrown that way they missed.</p>
+    <div class="sheetScroll"><table class="missTbl" id="missTable"></table></div>
+  </section>
+
   <details class="settings" id="settingsBox">
     <summary>Squad &amp; settings</summary>
     <div class="setGrid">
@@ -256,6 +283,9 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
         <input type="range" id="sky" min="20" max="100" step="1">
         <p class="hint">Drag the dashed line just below where clays fly. Orange things below it (vests, trap house, cones) are ignored.</p>
         <label class="check"><input type="checkbox" id="auto"> <span>Accept camera calls automatically. When off, the camera only suggests and you tap Hit or Miss.</span></label>
+        <label for="dirBand">Center (straightaway) band: <b id="dirBandVal"></b></label>
+        <input type="range" id="dirBand" min="5" max="35" step="1">
+        <p class="hint">Targets flying within this angle of straight away from the trap house count as center. Wider means more targets count as center. Applies to new shots; you can change any shot's direction in its photos.</p>
         <label class="check"><input type="checkbox" id="showMask"> <span>Show what the camera thinks is a clay (boxes on the video)</span></label>
       </fieldset>
       <div class="row" style="grid-column: 1 / -1">
@@ -284,6 +314,10 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     </div>
     <div class="vStrip" id="vStrip"></div>
     <div class="vTools"><button id="vPlay">&#x25B6; Play</button><button id="vZoom">Show full picture</button><span class="vWhy" id="vWhy"></span></div>
+    <div class="vDir"><span>Target flew</span>
+      <div class="dirBtns" id="vDirBtns"><button data-dir="L">&#x2190; Left</button><button data-dir="C">&#x2191; Center</button><button data-dir="R">Right &#x2192;</button></div>
+      <small id="vDirBy"></small>
+    </div>
     <div class="callBtns"><button id="vHit" class="hitBtn">Hit</button><button id="vMiss" class="missBtn">Miss</button><button id="vUnk" class="unkBtn" aria-label="Not sure: mark unknown">?</button></div>
     <div class="vNav"><button id="vPrev">&#x2039; Previous shot</button><button id="vNext">Next shot &#x203A;</button></div>
   </div>
@@ -302,7 +336,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
-  const defaults = { names: ["Shooter 1", "Shooter 2", "Shooter 3", "Shooter 4", "Shooter 5"], sens: 6, sky: 65, auto: true, showMask: true, zoom: true };
+  const defaults = { names: ["Shooter 1", "Shooter 2", "Shooter 3", "Shooter 4", "Shooter 5"], sens: 6, sky: 65, auto: true, showMask: true, zoom: true, dirBand: 15 };
   const settings = Object.assign({}, defaults, store.get("tls.settings") || {});
   let shots = store.get("tls.shots") || [];
   shots.forEach(s => { if (s.result === "judging") { s.result = "unsure"; s.why = "Page was reloaded before the call was made."; } });
@@ -412,11 +446,31 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     });
   }
 
+  // Which way the clay was flying, from where the camera first saw it to where it was at the shot.
+  // 0 degrees is straight away from the trap house (straight up the picture); negative is left.
+  const DIR_NAME = { L: "left", C: "center", R: "right" };
+  function dirFromMove(dx, dy) {
+    const ang = Math.atan2(dx, Math.max(dy, 0.001)) * 180 / Math.PI;
+    return ang <= -settings.dirBand ? "L" : ang >= settings.dirBand ? "R" : "C";
+  }
+  function clayDirection(frames, T, W) {
+    const fs = frames.filter(f => f.bsize > 0 && f.t >= T - 900 && f.t <= T + 40);
+    if (fs.length < 4) return null;
+    const avg = a => ({ x: (a[0].bcx + a[1].bcx) / 2, y: (a[0].bcy + a[1].bcy) / 2 });
+    const first = avg(fs.slice(0, 2)), last = avg(fs.slice(-2));
+    const dx = last.x - first.x, dy = first.y - last.y;
+    if (Math.hypot(dx, dy) < W * 0.015) return null;   // barely moved: can't tell
+    return dirFromMove(dx, dy);
+  }
+
   function decide(n, t) {
     const s = shots[n];
     if (!s || s.t !== Math.round(t) || s.result !== "judging") return;
     const v = judge(vision.frames, t, vision.W, vision.H, vision.skyY);
     s.cam = v.r;   // what the camera thought, kept even if you change the call
+    const d = clayDirection(vision.frames, t, vision.W);
+    s.camDir = d;
+    if (s.dirBy !== "coach") { s.dir = d; s.dirBy = d ? "camera" : ""; }
     if (settings.auto && v.r !== "unsure") { s.result = v.r; s.by = "camera"; s.why = v.why; }
     else { s.result = "unsure"; s.by = ""; s.why = v.r === "unsure" ? v.why : `Camera suggests ${v.r.toUpperCase()}: ${v.why}`; }
     save(); render();
@@ -732,7 +786,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     } else {
       const sl = slot(s.n);
       cp.className = "call " + s.result;
-      $("callWho").innerHTML = `Shot ${s.n + 1} · <b></b> · post ${sl.station}`;
+      $("callWho").innerHTML = `Shot ${s.n + 1} · <b></b> · post ${sl.station}` + (s.dir ? ` · flew ${DIR_NAME[s.dir]}` : "");
       $("callWho").querySelector("b").textContent = nameOf(sl.s);
       $("callBy").textContent = s.by === "camera" ? "Camera call" : s.by === "coach" ? "Coach call" : "";
       $("callResult").textContent = resultText[s.result] || "—";
@@ -757,7 +811,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
           const idx = b * 25 + k * 5 + sh, shot = shots[idx];
           if (shot) { taken++; if (shot.result === "hit") hits++; }
           const cls = ["box", shot ? shot.result : "", idx === nextN ? "next" : "", idx === selected ? "sel" : ""].join(" ");
-          html += `<button class="${cls}" data-n="${idx}" ${shot ? "" : "disabled"} aria-label="Shot ${idx + 1}">${shot ? markOf(shot.result) : ""}</button>`;
+          html += `<button class="${cls}" data-n="${idx}" ${shot ? "" : "disabled"}${shot && shot.dir ? ` data-dir="${shot.dir}"` : ""} aria-label="Shot ${idx + 1}${shot && shot.dir ? `, target flew ${DIR_NAME[shot.dir]}` : ""}">${shot ? markOf(shot.result) : ""}</button>`;
         }
         html += `</div></td>`;
       }
@@ -769,6 +823,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     t.querySelectorAll("[data-name]").forEach(el => el.textContent = nameOf(+el.dataset.name));
     const pending = shots.filter(x => x.result === "unsure").length;
     if (mode === "test") renderTestStats();
+    renderMissStats();
     $("squadTotal").textContent = `Squad ${squadHits} / ${squadShot}` + (pending ? ` · ${pending} need${pending === 1 ? "s" : ""} your call` : "");
     $("undoBtn").disabled = n === 0;
     $("shotBtn").disabled = n >= TOTAL;
@@ -874,6 +929,11 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     $("vHit").classList.toggle("sel", s.result === "hit");
     $("vMiss").classList.toggle("sel", s.result === "miss");
     $("vUnk").classList.toggle("sel", s.result === "unsure");
+    $("vDirBtns").querySelectorAll("button").forEach(b => b.classList.toggle("sel", b.dataset.dir === s.dir));
+    $("vDirBy").textContent = s.dir
+      ? (s.dirBy === "coach" ? "Set by you. Tap it again to clear." : "Seen by the camera. Tap another direction to change it.")
+      + (s.truthDir ? ` Simulation: it really flew ${DIR_NAME[s.truthDir]}.` : "")
+      : "The camera couldn't tell. Tap the way the target flew." + (s.truthDir ? ` Simulation: it really flew ${DIR_NAME[s.truthDir]}.` : "");
     $("vPrev").disabled = viewerN <= 0;
     $("vNext").disabled = viewerN >= shots.length - 1;
   }
@@ -901,18 +961,59 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     }
   }
 
+  // ---------- misses by direction ----------
+  function dirCounts(list) {
+    const c = { misses: 0, noDir: 0, L: { m: 0, n: 0 }, C: { m: 0, n: 0 }, R: { m: 0, n: 0 } };
+    for (const x of list) {
+      if (x.result !== "hit" && x.result !== "miss") continue;   // unknown shots aren't counted yet
+      if (x.result === "miss") c.misses++;
+      if (!x.dir) { if (x.result === "miss") c.noDir++; continue; }
+      c[x.dir].n++; if (x.result === "miss") c[x.dir].m++;
+    }
+    return c;
+  }
+  function missCells(c) {
+    const known = c.misses - c.noDir;
+    const top = Math.max(c.L.m, c.C.m, c.R.m);
+    return ["L", "C", "R"].map(k => {
+      const d = c[k], pct = known ? Math.round(100 * d.m / known) : 0;
+      const isTop = known >= 3 && d.m === top && d.m > 0;
+      return `<td><div class="mcell${isTop ? " top" : ""}${known ? "" : " none"}"><div class="pct">${known ? pct + "%" : "–"}</div>` +
+        `<div class="bar"><i style="width:${pct}%"></i></div><small>${d.n ? `${d.m} of ${d.n} missed` : "none thrown"}</small></div></td>`;
+    }).join("");
+  }
+  function renderMissStats() {
+    let html = `<thead><tr><th>Shooter</th><th>Miss</th><th>Left</th><th>Center</th><th>Right</th></tr></thead><tbody>`;
+    for (let sh = 0; sh < SQUAD; sh++) {
+      const c = dirCounts(shots.filter(x => slot(x.n).s === sh));
+      html += `<tr><td class="name"><span data-mname="${sh}"></span></td><td class="num">${c.misses}${c.noDir ? `<small>${c.noDir} no dir.</small>` : ""}</td>${missCells(c)}</tr>`;
+    }
+    const all = dirCounts(shots);
+    html += `<tr class="squadRow"><td class="name">Squad</td><td class="num">${all.misses}${all.noDir ? `<small>${all.noDir} no dir.</small>` : ""}</td>${missCells(all)}</tr></tbody>`;
+    const t = $("missTable"); t.innerHTML = html;
+    t.querySelectorAll("[data-mname]").forEach(el => el.textContent = nameOf(+el.dataset.mname));
+    const unknownDir = shots.filter(x => (x.result === "hit" || x.result === "miss") && !x.dir).length;
+    $("missNote").textContent = unknownDir ? `${unknownDir} shot${unknownDir === 1 ? "" : "s"} with no direction` : "";
+  }
+
   // ---------- export ----------
   function csv() {
-    const rows = [["Shooter", "Name", "Hits", "Targets shot", "Needs call"]];
+    const rows = [["Shooter", "Name", "Hits", "Targets shot", "Needs call", "Misses",
+      "Left missed", "Left thrown", "Left % of misses", "Center missed", "Center thrown", "Center % of misses",
+      "Right missed", "Right thrown", "Right % of misses", "Misses with no direction"]];
     for (let sh = 0; sh < SQUAD; sh++) {
       const mine = shots.filter(x => slot(x.n).s === sh);
-      rows.push([sh + 1, nameOf(sh), mine.filter(x => x.result === "hit").length, mine.length, mine.filter(x => x.result === "unsure").length]);
+      const c = dirCounts(mine), known = c.misses - c.noDir;
+      const pc = k => known ? Math.round(100 * c[k].m / known) + "%" : "";
+      rows.push([sh + 1, nameOf(sh), mine.filter(x => x.result === "hit").length, mine.length, mine.filter(x => x.result === "unsure").length, c.misses,
+        c.L.m, c.L.n, pc("L"), c.C.m, c.C.n, pc("C"), c.R.m, c.R.n, pc("R"), c.noDir]);
     }
     rows.push([]);
-    rows.push(["Shot", "Shooter", "Name", "Post", "Target at post", "Result", "Called by", "Notes"]);
+    rows.push(["Shot", "Shooter", "Name", "Post", "Target at post", "Result", "Called by", "Target direction", "Direction set by", "Notes"]);
     for (const x of shots) {
       const sl = slot(x.n);
-      rows.push([x.n + 1, sl.s + 1, nameOf(sl.s), sl.station, sl.target, x.result === "unsure" ? "unknown" : x.result, x.by || "", x.why || ""]);
+      rows.push([x.n + 1, sl.s + 1, nameOf(sl.s), sl.station, sl.target, x.result === "unsure" ? "unknown" : x.result, x.by || "",
+        x.dir ? DIR_NAME[x.dir] : "", x.dir ? x.dirBy : "", x.why || ""]);
     }
     return rows.map(r => r.map(v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(",")).join("\n");
   }
@@ -951,6 +1052,13 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
   $("vHit").addEventListener("click", () => viewerN != null && setResult(viewerN, "hit"));
   $("vMiss").addEventListener("click", () => viewerN != null && setResult(viewerN, "miss"));
   $("vUnk").addEventListener("click", () => viewerN != null && setResult(viewerN, "unsure"));
+  $("vDirBtns").addEventListener("click", e => {
+    const b = e.target.closest("button[data-dir]"); const s = shots[viewerN];
+    if (!b || !s) return;
+    if (s.dir === b.dataset.dir && s.dirBy === "coach") { s.dir = null; s.dirBy = ""; }
+    else { s.dir = b.dataset.dir; s.dirBy = "coach"; }
+    save(); render();
+  });
   $("vPrev").addEventListener("click", () => viewerN > 0 && openViewer(viewerN - 1));
   $("vNext").addEventListener("click", () => viewerN < shots.length - 1 && openViewer(viewerN + 1));
   $("vPlay").addEventListener("click", togglePlay);
@@ -982,6 +1090,8 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     inp.addEventListener("input", () => { settings.names[i] = inp.value; save(); render(); });
   }
   const sens = $("sens"), sky = $("sky"), auto = $("auto"), showMask = $("showMask");
+  const dirBand = $("dirBand"); dirBand.value = settings.dirBand;
+  dirBand.addEventListener("input", () => { settings.dirBand = +dirBand.value; save(); renderSettings(); });
   sens.value = settings.sens; sky.value = settings.sky; auto.checked = settings.auto; showMask.checked = settings.showMask;
   function renderSettings() {
     $("sensVal").textContent = settings.sens;
@@ -989,6 +1099,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     $("meterTick").style.left = (threshold() * 100) + "%";
     $("skyline").style.top = settings.sky + "%";
     $("skyline").hidden = settings.sky >= 100;
+    $("dirBandVal").textContent = `±${settings.dirBand}°`;
   }
   sens.addEventListener("input", () => { settings.sens = +sens.value; save(); renderSettings(); });
   sky.addEventListener("input", () => { settings.sky = +sky.value; save(); renderSettings(); });
@@ -1040,7 +1151,10 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     const right = simmed.filter(x => x.cam === x.truth).length;
     const wrong = simmed.filter(x => x.cam !== "unsure" && x.cam !== x.truth).length;
     const asked = simmed.filter(x => x.cam === "unsure").length;
-    el.innerHTML = `Camera on ${simmed.length} simulated shots: <b class="ok">${right} right</b>, <b class="bad">${wrong} wrong</b>, <b class="q">${asked} left for you (?)</b>.`;
+    const dirs = simmed.filter(x => x.truthDir);
+    const dirRight = dirs.filter(x => x.camDir === x.truthDir).length, dirNone = dirs.filter(x => !x.camDir).length;
+    el.innerHTML = `Camera on ${simmed.length} simulated shots: <b class="ok">${right} right</b>, <b class="bad">${wrong} wrong</b>, <b class="q">${asked} left for you (?)</b>.` +
+      ` Direction: <b class="ok">${dirRight} right</b>, <b class="bad">${dirs.length - dirRight - dirNone} wrong</b>${dirNone ? `, <b class="q">${dirNone} not seen</b>` : ""}.`;
   }
 
   // Simulated range: draws a trap field with clays to a canvas and feeds it to the same camera code.
@@ -1053,7 +1167,8 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     let clay = null, bits = [], puffs = [], next = performance.now() + 1200, lastT = performance.now();
     function launch(t) {
       clay = { t0: t, x: W / 2 + (Math.random() - .5) * 40, y: GROUND - 30, vx: (Math.random() * 2 - 1) * 230, vy: -(240 + Math.random() * 60),
-        r: 8, alive: true, outcome: pick(), shotAt: t + 450 + Math.random() * 300, shot: false, broke: false };
+        x0: 0, y0: 0, r: 8, alive: true, outcome: pick(), shotAt: t + 450 + Math.random() * 300, shot: false, broke: false };
+      clay.x0 = clay.x; clay.y0 = clay.y;
     }
     function breakClay(c) {
       if (c.outcome === "break") {
@@ -1106,7 +1221,7 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
           clay.r = Math.max(2.6, clay.r - 4.5 * dt);
           if (clay.y > GROUND - 4 || clay.x < -20 || clay.x > W + 20) clay.alive = false;
         }
-        if (!clay.shot && t >= clay.shotAt) { clay.shot = true; simShot(t, clay.outcome); }
+        if (!clay.shot && t >= clay.shotAt) { clay.shot = true; simShot(t, clay.outcome, dirFromMove(clay.x - clay.x0, clay.y0 - clay.y)); }
         if (clay.shot && !clay.broke && t >= clay.shotAt + 90) { clay.broke = true; if (clay.alive) breakClay(clay); }
         if (t - clay.t0 > 2600) { clay = null; next = t + 400 + Math.random() * 500; }
       }
@@ -1119,9 +1234,10 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
     draw();
     return { step };
   }
-  function simShot(t, outcome) {
+  function simShot(t, outcome, truthDir) {
     const n = addShot(t, "sound");
     if (n < 0) return;
+    shots[n].truthDir = truthDir;
     shots[n].truth = outcome === "miss" ? "miss" : "hit";
     shots[n].sim = outcome;
     render();

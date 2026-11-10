@@ -14,9 +14,14 @@ A phone web page that scores a five-person trap squad live from a tripod behind 
   burst like a slow-motion clip, and you can confirm or change the call right there.
 - **Asks you when it isn't sure.** Unclear shots show **?** until you tap **Hit** or **Miss**. You can also mark any
   shot unknown yourself with the **?** button. Unknown shots don't count toward the total until you decide.
+- **Misses by direction.** The camera notes which way each target was flying (left, center/straightaway or right
+  of the trap house, seen from behind the line). A table under the scoresheet shows, for each shooter and the squad,
+  what share of their misses went each way and how many targets thrown that way they missed (for example "60% left,
+  3 of 4 missed"). Fix any direction in the shot's photos. The **Center band** setting (default ±15°) sets how wide
+  "straightaway" is.
 - **Scoresheet** uses the usual marks (`/` hit, `O` miss), grouped by post, with totals per shooter and for the squad.
-- **Copy scores** or **Download CSV** for a spreadsheet: a summary per shooter plus every shot with post, result and
-  who made the call.
+- **Copy scores** or **Download CSV** for a spreadsheet: a summary per shooter (including misses by direction) plus
+  every shot with post, result, target direction and who made each call.
 
 Everything runs on the phone. Video and audio are never uploaded or recorded. The shot photos and the scores are
 saved only on that phone (in the browser's storage) and are deleted when you start a new round.
