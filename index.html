@@ -161,6 +161,11 @@ input[type=range] { width: 100%; accent-color: var(--clay); }
 .vNav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 .headBtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.teamBar { background: var(--surface); border: 2px solid var(--clay); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; }
+.teamHead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.teamHead b { font: 700 22px/1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; color: var(--clay); }
+.teamMsg { margin: 0; font-size: 15px; }
+.teamMsg.err { color: var(--miss); } .teamMsg.ok { color: var(--hit); }
 .testBar { background: var(--unsure-bg); border: 2px dashed var(--unsure); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; }
 .testHead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .testHead b { font: 700 22px/1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; color: var(--unsure); }
@@ -208,6 +213,25 @@ tr.squadRow td { border-top: 2px solid var(--line); }
       <button id="exitTestBtn">Exit test mode</button>
     </div>
     <p class="testStats" id="testStats"></p>
+  </section>
+  <section class="teamBar" id="teamBar" hidden>
+    <div class="teamHead"><b>Team app</b><span id="teamWhat"></span></div>
+    <div class="row">
+      <button id="sendBtn" class="primary">Send scores to team app</button>
+      <button id="nextRoundBtn" hidden>Start next round</button>
+      <button id="unlinkBtn">Stop using this squad</button>
+    </div>
+    <div class="confirm" id="sendConfirm" hidden>
+      <span id="sendConfirmText"></span>
+      <button class="danger" id="sendAnyway">Send anyway</button>
+      <button id="sendCancel">Go back</button>
+    </div>
+    <p class="teamMsg" id="teamMsg" role="status"></p>
+  </section>
+  <section class="teamBar" id="linkBox" hidden>
+    <div class="teamHead"><b>Load squad?</b></div>
+    <p class="teamMsg" id="linkText"></p>
+    <div class="row"><button class="primary" id="linkYes">Load squad and start a new round</button><button id="linkNo">Keep my current round</button></div>
   </section>
   <p class="status" id="status" hidden></p>
 
@@ -272,6 +296,7 @@ tr.squadRow td { border-top: 2px solid var(--line); }
     <div class="setGrid">
       <fieldset>
         <legend>Squad order (post 1 to post 5 at the start)</legend>
+        <p class="hint" id="linkedNames" hidden>Names and posts come from the team app for this squad.</p>
         <div id="nameRows"></div>
       </fieldset>
       <fieldset>
@@ -326,7 +351,13 @@ tr.squadRow td { border-top: 2px solid var(--line); }
 <script>
 (() => {
   "use strict";
-  const SQUAD = 5, PER_POST = 5, TOTAL = SQUAD * PER_POST * 5;   // 125 shots in a 25-target round
+  const PER_POST = 5;   // five targets at each post, five posts: 25 targets per shooter
+  // The squad: five shooters on posts 1-5, or a squad loaded from the team app, which can have empty posts.
+  let link = null;      // set below from storage: {base, key, event, squad, shooters: [{post, name, athlete_id}], uploadId}
+  const squad = () => (mode === "live" && link && link.shooters.length)
+    ? link.shooters : [1, 2, 3, 4, 5].map(p => ({ post: p, name: (settings.names[p - 1] || "").trim() || `Shooter ${p}` }));
+  const squadSize = () => squad().length;
+  const totalShots = () => squadSize() * 25;
   const JUDGE_DELAY = 950;   // ms after the shot to make the hit/miss call
   const REFRACTORY = 1400;   // ms: ignore echoes and the same blast in the next audio window
   const $ = id => document.getElementById(id);
@@ -339,10 +370,11 @@ tr.squadRow td { border-top: 2px solid var(--line); }
   const defaults = { names: ["Shooter 1", "Shooter 2", "Shooter 3", "Shooter 4", "Shooter 5"], sens: 6, sky: 65, auto: true, showMask: true, zoom: true, dirBand: 15 };
   const settings = Object.assign({}, defaults, store.get("tls.settings") || {});
   let shots = store.get("tls.shots") || [];
+  link = store.get("tls.link");
   shots.forEach(s => { if (s.result === "judging") { s.result = "unsure"; s.why = "Page was reloaded before the call was made."; } });
   let selected = shots.length ? shots.length - 1 : null;
   let mode = "live";   // "test" uses a separate scoresheet kept only in memory
-  const save = () => { store.set("tls.settings", settings); if (mode === "live") store.set("tls.shots", shots); };
+  const save = () => { store.set("tls.settings", settings); if (mode === "live") { store.set("tls.shots", shots); store.set("tls.link", link); } };
   const newRoundId = () => Date.now().toString(36);
   let roundId = store.get("tls.round") || newRoundId();
   store.set("tls.round", roundId);
@@ -392,13 +424,13 @@ tr.squadRow td { border-top: 2px solid var(--line); }
   // ---------- round bookkeeping ----------
   // Firing order never changes: post 1, 2, 3, 4, 5, five times, then everyone moves one post right (post 5 walks to post 1).
   function slot(n) {
-    const s = n % SQUAD, block = Math.floor(n / (SQUAD * PER_POST));
-    return { s, block, station: ((s + block) % SQUAD) + 1, target: Math.floor((n % (SQUAD * PER_POST)) / SQUAD) + 1 };
+    const sq = squad(), K = sq.length, s = n % K, block = Math.floor(n / (K * PER_POST));
+    return { s, block, station: ((sq[s].post - 1 + block) % 5) + 1, target: Math.floor((n % (K * PER_POST)) / K) + 1 };
   }
-  const nameOf = s => (settings.names[s] || "").trim() || `Shooter ${s + 1}`;
+  const nameOf = s => (squad()[s] || {}).name || `Shooter ${s + 1}`;
 
   function addShot(t, how) {
-    if (shots.length >= TOTAL) { flash("Round is complete. Start a new round in settings."); return -1; }
+    if (shots.length >= totalShots()) { flash("Round is complete. Start a new round in settings."); return -1; }
     const n = shots.length;
     const canJudge = vision.ready;
     shots.push({ n, t: Math.round(t), result: canJudge && how === "sound" ? "judging" : "unsure",
@@ -760,16 +792,16 @@ tr.squadRow td { border-top: 2px solid var(--line); }
   const resultText = { hit: "Hit", miss: "Miss", unsure: "Your call", judging: "Judging…" };
 
   function render() {
-    const n = shots.length;
-    $("progress").textContent = (mode === "test" ? "Test · " : "") + `Shot ${n} of ${TOTAL}` + (n < TOTAL ? ` · Station rotation ${Math.min(5, Math.floor(n / 25) + 1)} of 5` : " · Round complete");
+    const n = shots.length, TOTAL = totalShots(), K = squadSize();
+    $("progress").textContent = (mode === "test" ? "Test · " : "") + `Shot ${n} of ${TOTAL}` + (n < TOTAL ? ` · Station rotation ${Math.min(5, Math.floor(n / (K * 5)) + 1)} of 5` : " · Round complete");
 
     // up next
     const up = $("upNext");
     if (n >= TOTAL) {
-      up.className = "upnext"; up.innerHTML = `<div class="label">Round complete</div><div class="who">All 125 targets shot</div><div class="where">Copy or download the scores below.</div>`;
+      up.className = "upnext"; up.innerHTML = `<div class="label">Round complete</div><div class="who">All ${TOTAL} targets shot</div><div class="where">${link && mode === "live" ? "Send the scores to the team app above." : "Copy or download the scores below."}</div>`;
     } else {
       const sl = slot(n);
-      const rotate = n > 0 && n % 25 === 0;
+      const rotate = n > 0 && n % (K * 5) === 0;
       up.className = "upnext" + (rotate ? " rotate" : "");
       up.innerHTML = `<div class="label">${rotate ? "Rotate: everyone moves one post right, post 5 walks to post 1" : "Up next"}</div>
         <div class="who"></div><div class="where">Post ${sl.station} · target ${sl.target} of 5 at this post</div>`;
@@ -801,14 +833,15 @@ tr.squadRow td { border-top: 2px solid var(--line); }
     const nextN = n < TOTAL ? n : -1;
     let html = `<thead><tr><th>Shooter</th>${[1,2,3,4,5].map(i => `<th>${["1st","2nd","3rd","4th","5th"][i-1]} post</th>`).join("")}<th style="text-align:right">Total</th></tr></thead><tbody>`;
     let squadHits = 0, squadShot = 0;
-    for (let sh = 0; sh < SQUAD; sh++) {
+    const sqd = squad();
+    for (let sh = 0; sh < K; sh++) {
       let hits = 0, taken = 0;
       const active = nextN >= 0 && slot(nextN).s === sh;
-      html += `<tr class="${active ? "active" : ""}"><td class="name"><span data-name="${sh}"></span><small>starts post ${sh + 1}</small></td>`;
+      html += `<tr class="${active ? "active" : ""}"><td class="name"><span data-name="${sh}"></span><small>starts post ${sqd[sh].post}</small></td>`;
       for (let b = 0; b < 5; b++) {
-        html += `<td><div class="grp"><i>P${((sh + b) % 5) + 1}</i>`;
+        html += `<td><div class="grp"><i>P${((sqd[sh].post - 1 + b) % 5) + 1}</i>`;
         for (let k = 0; k < 5; k++) {
-          const idx = b * 25 + k * 5 + sh, shot = shots[idx];
+          const idx = b * K * 5 + k * K + sh, shot = shots[idx];
           if (shot) { taken++; if (shot.result === "hit") hits++; }
           const cls = ["box", shot ? shot.result : "", idx === nextN ? "next" : "", idx === selected ? "sel" : ""].join(" ");
           html += `<button class="${cls}" data-n="${idx}" ${shot ? "" : "disabled"}${shot && shot.dir ? ` data-dir="${shot.dir}"` : ""} aria-label="Shot ${idx + 1}${shot && shot.dir ? `, target flew ${DIR_NAME[shot.dir]}` : ""}">${shot ? markOf(shot.result) : ""}</button>`;
@@ -827,6 +860,7 @@ tr.squadRow td { border-top: 2px solid var(--line); }
     $("squadTotal").textContent = `Squad ${squadHits} / ${squadShot}` + (pending ? ` · ${pending} need${pending === 1 ? "s" : ""} your call` : "");
     $("undoBtn").disabled = n === 0;
     $("shotBtn").disabled = n >= TOTAL;
+    renderTeam();
     updateThumb();
     if (viewerN != null) renderViewer();
   }
@@ -984,7 +1018,7 @@ tr.squadRow td { border-top: 2px solid var(--line); }
   }
   function renderMissStats() {
     let html = `<thead><tr><th>Shooter</th><th>Miss</th><th>Left</th><th>Center</th><th>Right</th></tr></thead><tbody>`;
-    for (let sh = 0; sh < SQUAD; sh++) {
+    for (let sh = 0; sh < squadSize(); sh++) {
       const c = dirCounts(shots.filter(x => slot(x.n).s === sh));
       html += `<tr><td class="name"><span data-mname="${sh}"></span></td><td class="num">${c.misses}${c.noDir ? `<small>${c.noDir} no dir.</small>` : ""}</td>${missCells(c)}</tr>`;
     }
@@ -1001,7 +1035,7 @@ tr.squadRow td { border-top: 2px solid var(--line); }
     const rows = [["Shooter", "Name", "Hits", "Targets shot", "Needs call", "Misses",
       "Left missed", "Left thrown", "Left % of misses", "Center missed", "Center thrown", "Center % of misses",
       "Right missed", "Right thrown", "Right % of misses", "Misses with no direction"]];
-    for (let sh = 0; sh < SQUAD; sh++) {
+    for (let sh = 0; sh < squadSize(); sh++) {
       const mine = shots.filter(x => slot(x.n).s === sh);
       const c = dirCounts(mine), known = c.misses - c.noDir;
       const pc = k => known ? Math.round(100 * c[k].m / known) + "%" : "";
@@ -1082,7 +1116,7 @@ tr.squadRow td { border-top: 2px solid var(--line); }
 
   // settings
   const nameRows = $("nameRows");
-  for (let i = 0; i < SQUAD; i++) {
+  for (let i = 0; i < 5; i++) {
     const row = document.createElement("label"); row.className = "nameRow"; row.htmlFor = "name" + i;
     row.innerHTML = `<span>Post ${i + 1}</span><input type="text" id="name${i}" autocomplete="off" maxlength="24">`;
     nameRows.appendChild(row);
@@ -1117,8 +1151,123 @@ tr.squadRow td { border-top: 2px solid var(--line); }
       render(); $("confirmBox").hidden = true; flash("Practice scoresheet cleared."); return;
     }
     shots = []; selected = null; closeViewer();
+    if (link) { link.uploadId = newRoundId(); link.sent = null; }
     roundId = newRoundId(); store.set("tls.round", roundId); pendingPhotos.clear(); photos.clear();
     save(); render(); $("confirmBox").hidden = true; flash("New round started."); });
+
+  // ---------- team app: load a squad, send its scores ----------
+  let pendingLink = null;
+  function renderTeam() {
+    const on = mode === "live" && !!link;
+    $("teamBar").hidden = !on;
+    $("linkedNames").hidden = !on;
+    for (let i = 0; i < 5; i++) { const el = $("name" + i); if (el) el.disabled = on; }
+    if (!on) return;
+    const e = link.event || {}, sq = link.squad || {};
+    $("teamWhat").textContent = `${e.title || "Event"} · ${e.date ? new Date(e.date + "T12:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : ""} · Squad ${sq.number}` +
+      (sq.field ? ` · Trap ${sq.field}` : "") + ` · ${link.shooters.length} shooter${link.shooters.length === 1 ? "" : "s"}`;
+    $("nextRoundBtn").hidden = !link.sent;
+  }
+  function applyLink(l) {
+    link = l; pendingLink = null;
+    shots = []; selected = null; closeViewer();
+    roundId = newRoundId(); store.set("tls.round", roundId); pendingPhotos.clear(); photos.clear();
+    $("linkBox").hidden = true;
+    save(); render();
+    teamMsg(`Loaded Squad ${l.squad.number}: ${l.shooters.map(x => `post ${x.post} ${x.name}`).join(", ")}.`, "ok");
+  }
+  function teamMsg(text, level) { const m = $("teamMsg"); m.textContent = text; m.className = "teamMsg" + (level ? " " + level : ""); }
+  async function loadLink(base, key) {
+    base = base.replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(base)) return;
+    if (mode === "test") exitTest();
+    let d;
+    try {
+      const r = await fetch(`${base}/api/scorer/squad?key=${encodeURIComponent(key)}`);
+      d = await r.json();
+      if (!r.ok) throw new Error(d.error || `The team app answered ${r.status}.`);
+    } catch (err) {
+      const st = $("status"); st.hidden = false; st.className = "status err";
+      st.textContent = `Couldn't load the squad from the team app: ${err.message || "check your internet connection"} Open the link from the event page again.`;
+      return;
+    }
+    if (!d.shooters || !d.shooters.length) {
+      const st = $("status"); st.hidden = false; st.className = "status err";
+      st.textContent = "That squad has no shooters yet. Add them on the team app's event page, then open the link again.";
+      return;
+    }
+    const l = { base, key, event: d.event, squad: d.squad, team: d.team, uploadId: newRoundId(), sent: null,
+      shooters: d.shooters.slice().sort((a, b) => a.post - b.post).map(x => ({ post: x.post, name: x.name, athlete_id: x.athlete_id })) };
+    if (link && link.key === key) { link = Object.assign(link, { shooters: l.shooters, event: l.event, squad: l.squad }); save(); render(); return; }
+    if (shots.length) {
+      pendingLink = l;
+      $("linkText").textContent = `Load Squad ${l.squad.number} for ${l.event.title}? Your current scoresheet has ${shots.length} shot${shots.length === 1 ? "" : "s"}; loading the squad clears it.`;
+      $("linkBox").hidden = false;
+      $("linkBox").scrollIntoView({ block: "nearest" });
+      return;
+    }
+    applyLink(l);
+  }
+  function roundPayload() {
+    const out = [];
+    let unknown = 0;
+    squad().forEach((sh, i) => {
+      const mine = shots.filter(x => slot(x.n).s === i);
+      const done = mine.filter(x => x.result === "hit" || x.result === "miss");
+      unknown += mine.filter(x => x.result === "unsure" || x.result === "judging").length;
+      if (!done.length) return;
+      const misses = done.filter(x => x.result === "miss");
+      out.push({ athlete_id: sh.athlete_id, name: sh.name, hits: done.length - misses.length, targets: done.length,
+        miss_left: misses.filter(x => x.dir === "L").length, miss_center: misses.filter(x => x.dir === "C").length,
+        miss_right: misses.filter(x => x.dir === "R").length });
+    });
+    return { shooters: out, unknown };
+  }
+  async function sendScores(force) {
+    const p = roundPayload();
+    if (!p.shooters.length) { teamMsg("No decided shots to send yet.", "err"); return; }
+    if (p.unknown && !force) {
+      $("sendConfirmText").textContent = `${p.unknown} shot${p.unknown === 1 ? " still needs" : "s still need"} your call (?). Sending now leaves ${p.unknown === 1 ? "it" : "them"} out of the round.`;
+      $("sendConfirm").hidden = false;
+      return;
+    }
+    $("sendConfirm").hidden = true;
+    $("sendBtn").disabled = true; teamMsg("Sending…");
+    try {
+      const r = await fetch(`${link.base}/api/scorer/scores?key=${encodeURIComponent(link.key)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ upload_id: link.uploadId, shooters: p.shooters }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `The team app answered ${r.status}.`);
+      link.sent = new Date().toISOString(); save(); renderTeam();
+      if (d.saved.length) teamMsg(`Saved to ${d.event}: ` + d.saved.map(x => `${x.name} round ${x.round} (${x.hits}/${x.targets})`).join(", ") + ".", "ok");
+      else teamMsg(`These scores were already saved to ${d.event}. To record another round, tap Start next round first.`, "ok");
+    } catch (err) {
+      teamMsg(`Not sent: ${err.message || "check your internet connection and try again"}. The scoresheet is kept on this phone.`, "err");
+    } finally { $("sendBtn").disabled = false; }
+  }
+  $("sendBtn").addEventListener("click", () => sendScores(false));
+  $("sendAnyway").addEventListener("click", () => sendScores(true));
+  $("sendCancel").addEventListener("click", () => $("sendConfirm").hidden = true);
+  $("nextRoundBtn").addEventListener("click", () => {
+    shots = []; selected = null; closeViewer();
+    link.uploadId = newRoundId(); link.sent = null;
+    roundId = newRoundId(); store.set("tls.round", roundId); pendingPhotos.clear(); photos.clear();
+    save(); render(); teamMsg("New round started for the same squad.", "ok");
+  });
+  $("unlinkBtn").addEventListener("click", () => {
+    if (shots.length && !link.sent && !$("unlinkBtn").dataset.sure) {
+      $("unlinkBtn").dataset.sure = "1"; $("unlinkBtn").textContent = "Tap again: this round wasn't sent";
+      setTimeout(() => { delete $("unlinkBtn").dataset.sure; $("unlinkBtn").textContent = "Stop using this squad"; }, 4000);
+      return;
+    }
+    delete $("unlinkBtn").dataset.sure; $("unlinkBtn").textContent = "Stop using this squad";
+    link = null; shots = []; selected = null; closeViewer();
+    roundId = newRoundId(); store.set("tls.round", roundId); pendingPhotos.clear(); photos.clear();
+    save(); render(); flash("Back to the five names in settings.");
+  });
+  $("linkYes").addEventListener("click", () => pendingLink && applyLink(pendingLink));
+  $("linkNo").addEventListener("click", () => { pendingLink = null; $("linkBox").hidden = true; });
 
   // ---------- test mode ----------
   let liveShots = null, liveRoundId = null;
@@ -1269,6 +1418,13 @@ tr.squadRow td { border-top: 2px solid var(--line); }
   $("simBtn").addEventListener("click", () => running && source === "sim" ? stop() : startSim());
 
   renderSettings(); renderListen(); render();
+  {
+    const qp = new URLSearchParams(location.search);
+    if (qp.get("team") && qp.get("key")) {
+      loadLink(qp.get("team"), qp.get("key"));
+      history.replaceState(null, "", location.pathname);   // the key stays on this phone, not in the address bar
+    }
+  }
   window.__tls = { judge, slot, get shots() { return shots; }, vision, photos, photoKey };   // for testing
 })();
 </script>

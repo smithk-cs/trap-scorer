@@ -35,6 +35,15 @@ branch → Branch: `main`, `/ (root)` → Save.** Every push to `main` updates t
 
 The page must be opened from an `https://` address: phones only give the camera and microphone to secure pages.
 
+## Team app
+
+The scorer works with the [trap team app](https://github.com/smithk-cs/trap-team). On an event's page there, each squad
+has a **Score squad N on the phone** button. It opens this page with that squad's names in post order (squads with
+empty posts work too: fewer shooters, 25 targets each). When the round is done, tap **Send scores to team app**: each
+shooter's round, with misses by direction, is saved to the event. Shots still marked **?** are left out (you're asked
+first). Sending twice never counts a round twice; tap **Start next round** for the squad's next 25. **Stop using this
+squad** goes back to the five names in settings.
+
 ## Test mode
 
 Tap **Test mode** at the top. It uses a separate practice scoresheet that is never saved or mixed into your real round;
